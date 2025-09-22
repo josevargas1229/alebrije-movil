@@ -2,17 +2,23 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
-import { Provider, useSelector } from "react-redux";
+import { Provider, useSelector, useDispatch } from "react-redux";
 import { store } from "@/store";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { checkAuth } from "@/store/slices/authSlice";
+import { useEffect } from "react";
 
-export const unstable_settings = {
-  anchor: "login",
-};
+
 
 function AppNavigator() {
   const colorScheme = useColorScheme();
-  const user = useSelector((state: any) => state.auth.user);
+  const dispatch = useDispatch<any>();
+  const { user } = useSelector((state: any) => state.auth);
+
+  // Inicializar autenticación al cargar la aplicación
+  useEffect(() => {
+    dispatch(checkAuth());
+  }, [dispatch]);
 
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>

@@ -38,6 +38,12 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      [
+        "expo-barcode-scanner",
+        {
+          "cameraPermission": "Permitir que la aplicación acceda a la cámara para escanear códigos QR."
+        }
       ]
     ],
     "experiments": {
