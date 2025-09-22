@@ -1,10 +1,9 @@
-// app/_layout.tsx
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
 import { Provider, useSelector } from "react-redux";
-import { store } from "../store";
+import { store } from "@/store";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 export const unstable_settings = {
@@ -13,7 +12,7 @@ export const unstable_settings = {
 
 function AppNavigator() {
   const colorScheme = useColorScheme();
-  const user = useSelector((state: any) => state.auth.user); // <-- cambio aquí
+  const user = useSelector((state: any) => state.auth.user);
 
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
