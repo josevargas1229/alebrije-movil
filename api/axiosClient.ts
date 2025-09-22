@@ -17,20 +17,16 @@ export const setAuthHeader = (token?: string | null) => {
   }
 };
 
-// ⬇️ NUEVO: interceptor de REQUEST
 axiosClient.interceptors.request.use((config) => {
-  // marca las peticiones desde la app móvil (el backend usa esto para bypass en dev)
   (config.headers as any)["X-Client-Platform"] = "mobile";
 
   const url = (config.url || "").toLowerCase();
-  // no mandes Authorization en login/logout
   if (url.includes("/auth/login") || url.includes("/auth/logout")) {
     if (config.headers) delete (config.headers as any).Authorization;
   }
   return config;
 });
 
-// Interceptor para RESPUESTAS (lo tuyo, igual)
 axiosClient.interceptors.response.use(
   (response) => response,
   (error) => {

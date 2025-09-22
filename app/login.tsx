@@ -5,14 +5,11 @@ import {
   StyleSheet,
   Image,
   TouchableOpacity,
-  Dimensions,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { login } from "../store/slices/authSlice";
 import ThemedTextInput from "../components/ThemedTextInput";
 import ThemedButton from "../components/ThemedButton";
-
-const { width } = Dimensions.get("window");
 
 export default function LoginScreen() {
   const dispatch = useDispatch<any>();
@@ -29,7 +26,7 @@ export default function LoginScreen() {
   const formValid = emailValid && passwordValid;
 
   const handleLogin = () => {
-    if (!formValid) return; // no despachar si es inválido
+    if (!formValid) return;
     dispatch(login({ email, password }));
   };
 
@@ -97,7 +94,7 @@ export default function LoginScreen() {
           )}
         </View>
 
-        {/* Remember me & Forgot password */}
+        {/* Remember me */}
         <View style={styles.optionsContainer}>
           <TouchableOpacity
             style={styles.rememberContainer}
@@ -108,7 +105,6 @@ export default function LoginScreen() {
             </View>
             <Text style={styles.rememberText}>Recuérdame</Text>
           </TouchableOpacity>
-
         </View>
 
         {/* Login Button */}

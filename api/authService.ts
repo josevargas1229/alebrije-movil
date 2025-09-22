@@ -1,4 +1,3 @@
-// api/authService.ts
 import axiosClient, { setAuthHeader } from "./axiosClient";
 import axios from "axios";
 
@@ -18,7 +17,6 @@ export const authService = {
       withCredentials: true,
       headers: {
         "Content-Type": "application/json",
-        // ⬇️ NECESARIO para que el backend active el bypass en dev
         "X-Client-Platform": "mobile",
       },
     });
@@ -45,7 +43,7 @@ export const authService = {
       withCredentials: true,
       headers: {
         "Content-Type": "application/json",
-        "X-Client-Platform": "mobile", // ⬅️ clave para bypass en dev
+        "X-Client-Platform": "mobile",
         ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
       },
     });
