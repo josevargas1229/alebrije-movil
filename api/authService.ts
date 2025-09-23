@@ -1,4 +1,4 @@
-import axiosClient, { setAuthHeader } from "./axiosClient";
+import axiosClient from "./axiosClient";
 import axios from "axios";
 
 export interface LoginCredentials {
@@ -6,9 +6,17 @@ export interface LoginCredentials {
   password: string;
 }
 
-export type LoginResponse =
-  | { token?: string; user?: any; message?: string }
-  | any;
+export interface User {
+  nombreUsuario?: string;
+  tipo: number;
+  userId: number;
+  verified?: boolean;
+}
+
+export interface LoginResponse {
+  user: User | null;
+  message?: string;
+}
 
 export const authService = {
   getCsrf: async () => {
@@ -24,10 +32,7 @@ export const authService = {
   },
 
   login: async (credentials: LoginCredentials): Promise<LoginResponse> => {
-    setAuthHeader(null);
-
     const csrfToken = await authService.getCsrf();
-
     const body = {
       credenciales: {
         email: credentials.email,
@@ -48,16 +53,60 @@ export const authService = {
       },
     });
 
-    return res.data;
+    const data = res.data;
+
+    return {
+      user: data.user
+        ? {
+            nombreUsuario: data.user.nombreUsuario,
+            tipo: data.user.tipo,
+            userId: data.user.userId,
+            verified: data.user.verified,
+          }
+        : (data.tipo && data.userId
+            ? {
+                nombreUsuario: data.nombreUsuario,
+                tipo: data.tipo,
+                userId: data.userId,
+                verified: data.verified,
+              }
+            : null),
+      message: data.message,
+    };
   },
 
   checkAuth: async (): Promise<LoginResponse> => {
-    const res = await axiosClient.get("/auth/check-auth");
-    return res.data;
+    const res = await axiosClient.get("/auth/check-auth", {
+      withCredentials: true,
+    });
+    const data = res.data;
+
+    return {
+      user: data.user
+        ? {
+            nombreUsuario: data.user.nombreUsuario,
+            tipo: data.user.tipo,
+            userId: data.user.userId,
+            verified: data.user.verified,
+          }
+        : (data.tipo && data.userId
+            ? {
+                nombreUsuario: data.nombreUsuario,
+                tipo: data.tipo,
+                userId: data.userId,
+                verified: data.verified,
+              }
+            : null),
+    };
   },
 
   logout: async (): Promise<LoginResponse> => {
-    const res = await axiosClient.post("/auth/logout");
-    return res.data;
+    const res = await axiosClient.post("/auth/logout", {}, {
+      withCredentials: true,
+    });
+    return {
+      user: null,
+      message: res.data.message,
+    };
   },
 };

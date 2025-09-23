@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -7,13 +7,14 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
-import { login } from "../store/slices/authSlice";
-import ThemedTextInput from "../components/ThemedTextInput";
-import ThemedButton from "../components/ThemedButton";
+import { login } from "@/store/slices/authSlice";
+import ThemedTextInput from "@/components/ThemedTextInput";
+import ThemedButton from "@/components/ThemedButton";
+import { router } from "expo-router";
 
 export default function LoginScreen() {
   const dispatch = useDispatch<any>();
-  const { loading, error } = useSelector((state: any) => state.auth);
+  const { loading, error, user } = useSelector((state: any) => state.auth);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,6 +31,11 @@ export default function LoginScreen() {
     dispatch(login({ email, password }));
   };
 
+  useEffect(() => {
+    if (user) {
+      router.replace("/(tabs)");
+    }
+  }, [user]);
   return (
     <View style={styles.container}>
       {/* Logo */}
