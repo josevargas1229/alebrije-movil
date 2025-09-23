@@ -1,33 +1,37 @@
-// store/slices/authSlice.ts
-// 2. Crear slice
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { authService, LoginCredentials } from "../../api/authService";
-import { setAuthHeader } from "../../api/axiosClient";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { authService, LoginCredentials } from "@/api/authService";
 
-// Define the shape of the auth state
+interface User {
+  nombreUsuario?: string;
+  tipo: number;
+  userId: number;
+  verified?: boolean;
+}
+
 interface AuthState {
-  user: null | any;
-  token: null | string;
+  user: User | null;
   loading: boolean;
-  error: null | string;
+  error: string | null;
+  hasCheckedAuth: boolean;
+  isInitialized: boolean;
 }
 
 const initialState: AuthState = {
   user: null,
-  token: null,
   loading: false,
   error: null,
+  hasCheckedAuth: false,
+  isInitialized: false,
 };
 
-// Async thunk for login
 export const login = createAsyncThunk(
   "auth/login",
   async (credentials: LoginCredentials, thunkAPI) => {
-    console.log("Credenciales enviadas:", credentials);
     try {
       const response = await authService.login(credentials);
-      return response; // se espera { token?, user?, message? }
+      return {
+        user: response.user,
+      };
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
@@ -40,35 +44,45 @@ export const login = createAsyncThunk(
   }
 );
 
-// Verifica sesión activa y restaura token (JWT) si existe
 export const checkAuth = createAsyncThunk(
   "auth/checkAuth",
   async (_, thunkAPI) => {
     try {
-      // 1) Intenta restaurar token persistido (si usas JWT)
-      const token = await AsyncStorage.getItem("auth_token");
-      if (token) setAuthHeader(token);
-
-      // 2) Pregunta al backend si la sesión es válida (JWT o cookie)
-      const response = await authService.checkAuth(); // se espera { user, token? }
-      return { ...response, token: response?.token ?? token ?? null };
-    } catch (_err: any) {
+      const response = await authService.checkAuth();
+      return {
+        user: response.user,
+      };
+    } catch (err: any) {
+      console.log("CheckAuth failed:", err.message || err);
       return thunkAPI.rejectWithValue(null);
     }
   }
 );
 
-// Create the auth slice
+export const logoutThunk = createAsyncThunk(
+  "auth/logoutThunk",
+  async (_, thunkAPI) => {
+    try {
+      await authService.logout();
+      return null;
+    } catch (err: any) {
+      // Aún si falla el logout en el servidor, limpiamos el estado local
+      console.warn("Logout API failed, but clearing local state:", err);
+      return null;
+    }
+  }
+);
+
 const authSlice = createSlice({
   name: "auth",
   initialState,
   reducers: {
+    clearError: (state) => {
+      state.error = null;
+    },
     logout: (state) => {
       state.user = null;
-      state.token = null;
       state.error = null;
-      setAuthHeader(null);
-      AsyncStorage.removeItem("auth_token").catch(() => {});
     },
   },
   extraReducers: (builder) => {
@@ -78,43 +92,60 @@ const authSlice = createSlice({
         state.loading = true;
         state.error = null;
       })
-      .addCase(login.fulfilled, (state, action: any) => {
+      .addCase(login.fulfilled, (state, action) => {
         state.loading = false;
-        state.token = action.payload?.token ?? null;
-        state.user = action.payload?.user ?? null;
-
-        if (state.token) {
-          setAuthHeader(state.token);
-          AsyncStorage.setItem("auth_token", state.token).catch(() => {});
-        } else {
-          // Si trabajas solo con cookies HttpOnly
-          setAuthHeader(null);
+        state.user = action.payload.user;
+        state.error = null;
+        if (!state.hasCheckedAuth) {
+          state.hasCheckedAuth = true;
+          state.isInitialized = true;
         }
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
         state.error = (action.payload as string) || "Credenciales inválidas";
+        state.user = null;
       })
+
       // CHECK AUTH
       .addCase(checkAuth.pending, (state) => {
-        state.loading = true;
+        if (!state.isInitialized) {
+          state.loading = true;
+        }
+        state.error = null;
       })
-      .addCase(checkAuth.fulfilled, (state, action: any) => {
+      .addCase(checkAuth.fulfilled, (state, action) => {
+        console.log("checkAuth fulfilled, updating state with user:", action.payload.user);
         state.loading = false;
-        state.user = action.payload?.user ?? null;
-        state.token = action.payload?.token ?? null;
-        if (state.token) setAuthHeader(state.token);
-        else setAuthHeader(null);
+        state.user = action.payload.user;
+        state.hasCheckedAuth = true;
+        state.isInitialized = true;
+        state.error = null;
       })
       .addCase(checkAuth.rejected, (state) => {
+        console.log("checkAuth rejected, setting state to initialized");
         state.loading = false;
         state.user = null;
-        state.token = null;
-        setAuthHeader(null);
+        state.hasCheckedAuth = true;
+        state.isInitialized = true;
+      })
+
+      // LOGOUT
+      .addCase(logoutThunk.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(logoutThunk.fulfilled, (state) => {
+        state.loading = false;
+        state.user = null;
+        state.error = null;
+      })
+      .addCase(logoutThunk.rejected, (state) => {
+        state.loading = false;
+        state.user = null;
+        state.error = null;
       });
   },
 });
 
-// Export actions and reducer
-export const { logout } = authSlice.actions;
+export const { logout, clearError } = authSlice.actions;
 export default authSlice.reducer;
