@@ -13,9 +13,10 @@ export default function ScannerLayout() {
                 options={{ title: 'Escanea un código' }}
             />
             <Stack.Screen
-                name="product-details/[barcode]"
+                name="product-details/[qrcode]"
                 options={{
                     title: 'Detalles del producto',
+                    headerShown: true,
                     animation: 'fade_from_bottom',
                 }}
             />

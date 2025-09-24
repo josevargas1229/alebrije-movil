@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Text, View, StyleSheet, Alert, TouchableOpacity, Dimensions } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';  // Importado para reinicio automático
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -23,6 +24,13 @@ export default function ScannerScreen() {
         }
     }, [permission, requestPermission]);
 
+    // Reinicio automático del estado al regresar a la pantalla (useFocusEffect)
+    useFocusEffect(
+        React.useCallback(() => {
+            setScanned(false);  // Reinicia el estado del escáner cada vez que se enfoca la pantalla
+        }, [])
+    );
+
     // Manejar cuando la cámara está lista
     const handleCameraReady = () => {
         setCameraReady(true);
@@ -38,8 +46,8 @@ export default function ScannerScreen() {
         if (type === 'qr') {
             // Navegar usando ruta relativa con parámetros dinámicos
             router.push({
-                pathname: '/product-details/[barcode]',
-                params: { barcode: data },
+                pathname: '/product-details/[qrcode]',
+                params: { qrcode: data },
             });
         } else {
             // Manejar otros tipos de códigos de barras
@@ -51,8 +59,8 @@ export default function ScannerScreen() {
                         text: 'Usar este código',
                         onPress: () => {
                             router.push({
-                                pathname: '/product-details/[barcode]',
-                                params: { barcode: data },
+                                pathname: '/product-details/[qrcode]',
+                                params: { qrcode: data },
                             });
                         }
                     },
@@ -66,7 +74,6 @@ export default function ScannerScreen() {
         }
     };
 
-    // Función para volver a escanear
     const resetScanner = () => {
         setScanned(false);
     };
@@ -107,7 +114,7 @@ export default function ScannerScreen() {
                 onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
                 onCameraReady={handleCameraReady}
                 barcodeScannerSettings={{
-                    barcodeTypes: ['qr'], // Solo códigos QR como en tu código original
+                    barcodeTypes: ['qr'], 
                 }}
                 // Configuraciones adicionales recomendadas
                 enableTorch={false}
