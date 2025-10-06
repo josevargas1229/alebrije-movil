@@ -27,14 +27,12 @@ const ProductDetailScreen = () => {
 
     useEffect(() => {
         if (product?.tallasColoresStock && product.tallasColoresStock.length > 0) {
-            // Inicializar con la primera talla y color disponibles si no hay selección
             if (!selectedSize && !selectedColor) {
                 const firstVariant = product.tallasColoresStock[0];
                 setSelectedSize(firstVariant.talla.talla);
                 setSelectedColor(firstVariant.coloresStock.color);
                 setAvailableStock(firstVariant.stock);
             } else {
-                // Actualizar stock cuando cambie la selección
                 const selectedVariant = product.tallasColoresStock.find(
                     (variant) =>
                         variant.talla.talla === selectedSize &&
@@ -60,18 +58,31 @@ const ProductDetailScreen = () => {
         if (availableStock && availableStock > 0) {
             Alert.alert(
                 "Producto agregado",
-                `Se ha agregado ${selectedSize} - ${selectedColor} al carrito.`,
-                [{ text: "OK", onPress: () => console.log("Producto agregado") }]
+                `Se ha agregado ${selectedSize} - ${selectedColor} a la venta actual.`,
+                [{ text: "OK", onPress: () => console.log("Agregado a venta actual") }]
             );
         } else {
-            Alert.alert("Error", "No hay stock disponible para esta combinación.");
+            Alert.alert("Error", "No hay stock disponible.");
+        }
+    };
+
+    const handleCreateNewSale = () => {
+        if (availableStock && availableStock > 0) {
+            Alert.alert(
+                "Nueva venta creada",
+                `Se ha creado una nueva venta con ${selectedSize} - ${selectedColor}.`,
+                [{ text: "OK", onPress: () => console.log("Nueva venta creada") }]
+            );
+            // Placeholder: Integra con Redux/carrito para crear venta nueva.
+        } else {
+            Alert.alert("Error", "No hay stock disponible.");
         }
     };
 
     if (loading) {
         return (
             <View style={styles.container}>
-                <ActivityIndicator size="large" color="#0000ff" />
+                <ActivityIndicator size="large" color="#3b82f6" />
                 <Text style={styles.message}>Cargando producto...</Text>
             </View>
         );
@@ -79,13 +90,17 @@ const ProductDetailScreen = () => {
 
     if (error) {
         return (
-            <View style={styles.container}>
-                <Text style={styles.errorText}>{error}</Text>
-                <TouchableOpacity style={styles.button} onPress={handleRetry}>
-                    <Text style={styles.buttonText}>Reintentar</Text>
+            <View style={styles.errorContainer}>
+                <View style={styles.errorIconContainer}>
+                    <Text style={styles.errorIcon}>⚠️</Text>
+                </View>
+                <Text style={styles.errorTitle}>Algo salió mal</Text>
+                <Text style={styles.errorMessage}>{error}</Text>
+                <TouchableOpacity style={styles.errorButton} onPress={handleRetry}>
+                    <Text style={styles.errorButtonText}>Reintentar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.button} onPress={handleGoBack}>
-                    <Text style={styles.buttonText}>Volver al escáner</Text>
+                <TouchableOpacity style={styles.errorButtonSecondary} onPress={handleGoBack}>
+                    <Text style={styles.errorButtonTextSecondary}>Volver al escáner</Text>
                 </TouchableOpacity>
             </View>
         );
@@ -93,21 +108,23 @@ const ProductDetailScreen = () => {
 
     if (!product) {
         return (
-            <View style={styles.container}>
-                <Text style={styles.errorText}>Producto no encontrado</Text>
-                <TouchableOpacity style={styles.button} onPress={handleGoBack}>
-                    <Text style={styles.buttonText}>Volver al escáner</Text>
+            <View style={styles.errorContainer}>
+                <View style={styles.errorIconContainer}>
+                    <Text style={styles.errorIcon}>🔍</Text>
+                </View>
+                <Text style={styles.errorTitle}>Producto no encontrado</Text>
+                <Text style={styles.errorMessage}>No pudimos encontrar información para este código QR</Text>
+                <TouchableOpacity style={styles.errorButtonSecondary} onPress={handleGoBack}>
+                    <Text style={styles.errorButtonTextSecondary}>Volver al escáner</Text>
                 </TouchableOpacity>
             </View>
         );
     }
 
-    // Filtrar tallas disponibles según el color seleccionado
     const availableSizes = product.tallasColoresStock
         .filter((variant) => !selectedColor || variant.coloresStock.color === selectedColor)
         .map((variant) => variant.talla.talla);
 
-    // Filtrar colores disponibles según la talla seleccionada
     const availableColors = product.tallasColoresStock
         .filter((variant) => !selectedSize || variant.talla.talla === selectedSize)
         .map((variant) => variant.coloresStock.color);
@@ -122,7 +139,7 @@ const ProductDetailScreen = () => {
                 />
             )}
             <Text style={styles.detail}>{product.tipo.nombre} {product.marca.nombre} {product.categoria.nombre}</Text>
-            <Text style={styles.title}>Precio: ${parseFloat(product.precio).toFixed(2)}</Text>
+            <Text style={styles.title}>${parseFloat(product.precio).toFixed(2)}</Text>
             <View style={styles.selectorContainer}>
                 <Text style={styles.label}>Talla:</Text>
                 <Picker
@@ -173,7 +190,14 @@ const ProductDetailScreen = () => {
                 onPress={handleAddToSale}
                 disabled={!(selectedSize && selectedColor && availableStock && availableStock > 0)}
             >
-                <Text style={styles.buttonText}>Agregar a la venta</Text>
+                <Text style={styles.buttonText}>Agregar a la venta actual</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={[styles.buttonSecondary, !(selectedSize && selectedColor && availableStock && availableStock > 0) && styles.disabledButton]}
+                onPress={handleCreateNewSale}
+                disabled={!(selectedSize && selectedColor && availableStock && availableStock > 0)}
+            >
+                <Text style={styles.buttonTextSecondary}>Crear nueva venta</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.button} onPress={handleGoBack}>
                 <Text style={styles.buttonText}>Volver al escáner</Text>
@@ -225,11 +249,20 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     button: {
-        backgroundColor: "#007AFF",
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 5,
-        marginTop: 10,
+        backgroundColor: "#3b82f6",
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+        borderRadius: 8,
+        marginTop: 12,
+        width: "80%",
+        alignItems: "center",
+    },
+    buttonSecondary: {
+        backgroundColor: "#f97316",
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+        borderRadius: 8,
+        marginTop: 12,
         width: "80%",
         alignItems: "center",
     },
@@ -241,11 +274,87 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: "600",
     },
-    errorText: {
-        fontSize: 18,
-        color: "red",
-        marginBottom: 20,
+    buttonTextSecondary: {
+        color: "#fff",
+        fontSize: 16,
+        fontWeight: "600",
+    },
+    errorContainer: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 32,
+        backgroundColor: "#f8fafc",
+    },
+    errorIconContainer: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: "#eff6ff",
+        justifyContent: "center",
+        alignItems: "center",
+        marginBottom: 24,
+        borderWidth: 3,
+        borderColor: "#3b82f6",
+    },
+    errorIcon: {
+        fontSize: 48,
+    },
+    errorTitle: {
+        fontSize: 24,
+        color: "#1e293b",
+        marginBottom: 12,
         textAlign: "center",
+        fontWeight: "700",
+    },
+    errorMessage: {
+        fontSize: 16,
+        color: "#64748b",
+        marginBottom: 32,
+        textAlign: "center",
+        lineHeight: 24,
+        paddingHorizontal: 20,
+    },
+    errorText: {
+        fontSize: 20,
+        color: "#3b82f6",
+        marginBottom: 24,
+        textAlign: "center",
+        fontWeight: "500",
+    },
+    errorButton: {
+        backgroundColor: "#f97316",
+        paddingVertical: 14,
+        paddingHorizontal: 32,
+        borderRadius: 12,
+        marginBottom: 12,
+        width: "80%",
+        alignItems: "center",
+        shadowColor: "#f97316",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    errorButtonSecondary: {
+        backgroundColor: "#fff",
+        borderColor: "#3b82f6",
+        borderWidth: 2,
+        paddingVertical: 14,
+        paddingHorizontal: 32,
+        borderRadius: 12,
+        width: "80%",
+        alignItems: "center",
+    },
+    errorButtonText: {
+        color: "#fff",
+        fontSize: 16,
+        fontWeight: "700",
+    },
+    errorButtonTextSecondary: {
+        color: "#3b82f6", 
+        fontSize: 16,
+        fontWeight: "700",
     },
     message: {
         fontSize: 18,
