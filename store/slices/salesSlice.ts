@@ -1,38 +1,33 @@
-import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
-const STORAGE_KEY = "draft_sale_order_v1";
+
+export interface VentaProducto {
+  producto_id: number;
+  talla_id: number;
+  color_id: number;
+  cantidad: number;
+  precio_unitario?: number;
+}
 
 export type DraftStatus = "en_proceso" | "finalizada" | "cancelada";
 
-export interface DraftCustomer {
-  nombre?: string;
-  telefono?: string;
-  email?: string;
-}
-
 export interface DraftSale {
-  id: string;              // uuid corto o similar
-  orderNumber: string;     // ORD-YYYYMMDD-HHMMSS-XXXX
-  createdAt: string;       // ISO timestamp
-  status: DraftStatus;     // en_proceso
-  customer: DraftCustomer; // opcional
-  items: any[];            // por ahora vacío
+  id: string;
+  orderNumber: string;
+  createdAt: string;
+  usuario_id: number | null;
+  total: number;
+  productos: VentaProducto[];
+  recogerEnTienda: boolean;
+  direccion_id: number | null;
+  status: DraftStatus;
 }
 
 interface SalesState {
   draft: DraftSale | null;
-  loading: boolean;
-  error: string | null;
 }
 
-const initialState: SalesState = {
-  draft: null,
-  loading: false,
-  error: null,
-};
 
-// Utils
 const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 const genOrderNumber = () => {
   const d = new Date();
@@ -47,65 +42,112 @@ const genOrderNumber = () => {
 };
 const genId = () => Math.random().toString(36).slice(2, 10);
 
-// Thunks de persistencia
-export const loadDraftFromStorage = createAsyncThunk("sales/loadDraft", async () => {
-  const raw = await AsyncStorage.getItem(STORAGE_KEY);
-  return raw ? (JSON.parse(raw) as DraftSale) : null;
-});
+const recalcTotal = (productos: VentaProducto[]) =>
+  productos.reduce((acc, p) => acc + (p.precio_unitario || 0) * p.cantidad, 0);
 
-export const persistDraftToStorage = createAsyncThunk(
-  "sales/persistDraft",
-  async (_, { getState }) => {
-    const state = getState() as any;
-    const draft: DraftSale | null = state.sales.draft;
-    if (draft) {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
-    }
-    return draft;
-  }
-);
 
-export const clearDraftFromStorage = createAsyncThunk("sales/clearDraft", async () => {
-  await AsyncStorage.removeItem(STORAGE_KEY);
-  return true;
-});
+const initialState: SalesState = {
+  draft: null,
+};
+
 
 const salesSlice = createSlice({
   name: "sales",
   initialState,
   reducers: {
-    startNewOrder(state) {
+
+    startNewOrder(
+      state,
+      action: PayloadAction<{ usuario_id?: number | null } | undefined>
+    ) {
       state.draft = {
         id: genId(),
         orderNumber: genOrderNumber(),
         createdAt: new Date().toISOString(),
+        usuario_id: action.payload?.usuario_id ?? null,
+        total: 0,
+        productos: [],
+        recogerEnTienda: false,
+        direccion_id: null,
         status: "en_proceso",
-        customer: {},
-        items: [],
       };
-      state.error = null;
     },
-    updateCustomer(
+
+    setUsuario(state, action: PayloadAction<number | null>) {
+      if (!state.draft) return;
+      state.draft.usuario_id = action.payload;
+    },
+
+
+    setRecogerEnTienda(state, action: PayloadAction<boolean>) {
+      if (!state.draft) return;
+      state.draft.recogerEnTienda = action.payload;
+    },
+
+
+    setDireccion(state, action: PayloadAction<number | null>) {
+      if (!state.draft) return;
+      state.draft.direccion_id = action.payload;
+    },
+
+  
+    addProducto(state, action: PayloadAction<VentaProducto>) {
+      if (!state.draft) return;
+      state.draft.productos.push(action.payload);
+      state.draft.total = recalcTotal(state.draft.productos);
+    },
+
+
+    updateProducto(
       state,
-      action: PayloadAction<Partial<DraftCustomer>>
+      action: PayloadAction<{ index: number; patch: Partial<VentaProducto> }>
     ) {
       if (!state.draft) return;
-      state.draft.customer = { ...state.draft.customer, ...action.payload };
+      const { index, patch } = action.payload;
+      const curr = state.draft.productos[index];
+      if (!curr) return;
+      state.draft.productos[index] = { ...curr, ...patch };
+      state.draft.total = recalcTotal(state.draft.productos);
     },
+
+ 
+    removeProducto(state, action: PayloadAction<number>) {
+      if (!state.draft) return;
+      state.draft.productos.splice(action.payload, 1);
+      state.draft.total = recalcTotal(state.draft.productos);
+    },
+
+
+    clearProductos(state) {
+      if (!state.draft) return;
+      state.draft.productos = [];
+      state.draft.total = 0;
+    },
+
+
     setStatus(state, action: PayloadAction<DraftStatus>) {
       if (!state.draft) return;
       state.draft.status = action.payload;
     },
-  },
-  extraReducers: (builder) => {
-    builder
-      .addCase(loadDraftFromStorage.pending, (s) => { s.loading = true; s.error = null; })
-      .addCase(loadDraftFromStorage.fulfilled, (s, a) => { s.loading = false; s.draft = a.payload; })
-      .addCase(loadDraftFromStorage.rejected, (s, a) => { s.loading = false; s.error = String(a.error.message || "Error al cargar borrador"); })
-      .addCase(persistDraftToStorage.rejected, (s, a) => { s.error = String(a.error.message || "Error al guardar borrador"); })
-      .addCase(clearDraftFromStorage.fulfilled, (s) => { s.draft = null; });
+
+
+    clearDraft(state) {
+      state.draft = null;
+    },
   },
 });
 
-export const { startNewOrder, updateCustomer, setStatus } = salesSlice.actions;
+export const {
+  startNewOrder,
+  setUsuario,
+  setRecogerEnTienda,
+  setDireccion,
+  addProducto,
+  updateProducto,
+  removeProducto,
+  clearProductos,
+  setStatus,
+  clearDraft,
+} = salesSlice.actions;
+
 export default salesSlice.reducer;
