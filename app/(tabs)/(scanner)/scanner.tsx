@@ -38,41 +38,36 @@ export default function ScannerScreen() {
 
     // Manejar el escaneo del código QR/Barcode
     const handleBarcodeScanned = ({ type, data }: { type: string; data: string }) => {
-        if (!cameraReady) return; // Solo procesar si la cámara está lista
-        
+    if (!cameraReady) return;
+    
+    const idNum = parseInt(data, 10);
+    
+    if (type !== 'qr') {
         setScanned(true);
-        
-        // Verificar si es un código QR
-        if (type === 'qr') {
-            // Navegar usando ruta relativa con parámetros dinámicos
-            router.push({
-                pathname: '/product-details/[qrcode]',
-                params: { qrcode: data },
-            });
-        } else {
-            // Manejar otros tipos de códigos de barras
-            Alert.alert(
-                'Código detectado', 
-                `Tipo: ${type}\nDatos: ${data}`,
-                [
-                    {
-                        text: 'Usar este código',
-                        onPress: () => {
-                            router.push({
-                                pathname: '/product-details/[qrcode]',
-                                params: { qrcode: data },
-                            });
-                        }
-                    },
-                    {
-                        text: 'Solo códigos QR',
-                        onPress: () => setScanned(false),
-                        style: 'cancel'
-                    }
-                ]
-            );
-        }
-    };
+        Alert.alert(
+            'Código no válido',
+            'Solo se aceptan códigos QR.',
+            [{ text: 'Reintentar', onPress: () => setScanned(false) }]
+        );
+        return;
+    }
+    
+    if (isNaN(idNum) || idNum <= 0) {
+        setScanned(true);
+        Alert.alert(
+            'Código QR inválido',
+            'El código QR debe contener un número de producto válido (mayor a 0).',
+            [{ text: 'Reintentar', onPress: () => setScanned(false) }]
+        );
+        return;
+    }
+
+    setScanned(true);
+    router.push({
+        pathname: '/product-details/[qrcode]',
+        params: { qrcode: data },
+    });
+};
 
     const resetScanner = () => {
         setScanned(false);
@@ -114,30 +109,30 @@ export default function ScannerScreen() {
                 onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
                 onCameraReady={handleCameraReady}
                 barcodeScannerSettings={{
-                    barcodeTypes: ['qr'], 
+                    barcodeTypes: ['qr'],
                 }}
                 // Configuraciones adicionales recomendadas
                 enableTorch={false}
                 autofocus="on"
             />
-            
+
             {/* Overlay con información y controles */}
             <View style={styles.overlay}>
                 {/* Área superior con botón de flip */}
                 <View style={styles.topOverlay}>
-                    <TouchableOpacity 
-                        style={styles.flipButton} 
+                    <TouchableOpacity
+                        style={styles.flipButton}
                         onPress={toggleCameraFacing}
                         disabled={!cameraReady}
                     >
                         <Text style={styles.flipButtonText}>🔄</Text>
                     </TouchableOpacity>
                 </View>
-                
+
                 {/* Área central con marco de escaneo cuadrado */}
                 <View style={styles.centerOverlay}>
                     <View style={styles.scanAreaContainer}>
-                        <View 
+                        <View
                             style={[
                                 styles.scanArea,
                                 {
@@ -155,14 +150,14 @@ export default function ScannerScreen() {
                         </View>
                     </View>
                 </View>
-                
+
                 {/* Área inferior con instrucciones y botones */}
                 <View style={styles.bottomOverlay}>
                     <Text style={styles.instructions}>
-                        {!cameraReady 
+                        {!cameraReady
                             ? 'Iniciando cámara...'
-                            : scanned 
-                                ? '¡Código QR escaneado!' 
+                            : scanned
+                                ? '¡Código QR escaneado!'
                                 : 'Apunta la cámara a un código QR'
                         }
                     </Text>
