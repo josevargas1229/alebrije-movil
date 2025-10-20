@@ -10,10 +10,13 @@ import {
   StatusBar,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
+import { useRouter } from "expo-router";
 import { RootState } from "@/store";
 import {
   startNewOrder,
   clearDraft,
+  updateProducto,
+  removeProducto,
 } from "@/store/slices/salesSlice";
 import ThemedTextInput from "@/components/ThemedTextInput";
 import ThemedButton from "@/components/ThemedButton";
@@ -32,7 +35,7 @@ export default function NewSaleScreen() {
   const dispatch = useDispatch<any>();
   const draft = useSelector((s: RootState) => s.sales.draft);
   const activeSaleId = useSelector((s: RootState) => s.sales.activeSaleId);
-
+  const router = useRouter();
   const [customer, setCustomer] = useState({
     nombre: "",
     telefono: "",
@@ -43,6 +46,27 @@ export default function NewSaleScreen() {
   useEffect(() => {
     if (!draft) dispatch(startNewOrder());
   }, [dispatch, draft]);
+
+  const handleUpdateQuantity = (index: number, newQuantity: number) => {
+    if (newQuantity > 0) {
+      dispatch(updateProducto({ index, patch: { cantidad: newQuantity } }));
+    }
+  };
+
+  const handleRemoveProduct = (index: number, productName: string) => {
+    Alert.alert(
+      "Eliminar Producto",
+      `¿Estás seguro de que quieres eliminar "${productName}" del carrito?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: () => dispatch(removeProducto(index)),
+        },
+      ]
+    );
+  };
 
   const hasErrors = useMemo(() => Object.keys(errors).length > 0, [errors]);
 
@@ -118,16 +142,16 @@ export default function NewSaleScreen() {
 
   const totalProductos = draft.productos.reduce((sum, p) => sum + p.cantidad, 0);
   const statusLabel: Record<"en_proceso" | "finalizada" | "cancelada", string> = {
-  en_proceso: "Borrador",
-  finalizada: "Finalizada",
-  cancelada: "Cancelada",
-};
+    en_proceso: "Borrador",
+    finalizada: "Finalizada",
+    cancelada: "Cancelada",
+  };
 
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1e40af" />
-      
+
       {/* Header Mejorado */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
@@ -139,7 +163,7 @@ export default function NewSaleScreen() {
           </View>
           <View style={styles.statusBadge}>
             <View style={styles.statusDot} />
-          <Text style={styles.statusText}>{statusLabel[draft.status]}</Text>
+            <Text style={styles.statusText}>{statusLabel[draft.status]}</Text>
           </View>
         </View>
       </View>
@@ -174,7 +198,7 @@ export default function NewSaleScreen() {
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>Productos</Text>
           </View>
-          
+
           {draft.productos.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>No hay productos</Text>
@@ -190,46 +214,96 @@ export default function NewSaleScreen() {
                 const colorDisplay = (p as any).color_label ?? p.color_id;
                 const productDisplay =
                   (p as any).producto_nombre ?? `Producto #${p.producto_id}`;
-                
+
                 return (
                   <View
                     key={`${p.producto_id}-${p.talla_id}-${p.color_id}-${i}`}
                     style={[
                       styles.productItem,
-                      i === draft.productos.length - 1 && styles.productItemLast
+                      i === draft.productos.length - 1 && styles.productItemLast,
                     ]}
                   >
-                    <View style={styles.productHeader}>
-                      <View style={styles.productInfo}>
-                        <Text style={styles.productLabel}>Producto:</Text>
+                    {/* Contenedor principal: izquierda info + derecha precios */}
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      {/* Columna izquierda */}
+                      <View style={{ flex: 1 }}>
                         <Text style={styles.productName}>{productDisplay}</Text>
+
+                        {/* Detalles: talla y color */}
                         <View style={styles.productDetails}>
                           <View style={styles.productTag}>
-                            <Text style={styles.productTagText}>
-                              Talla {tallaDisplay}
-                            </Text>
+                            <Text style={styles.productTagText}>Talla {tallaDisplay}</Text>
                           </View>
                           <View style={styles.productTag}>
-                            <Text style={styles.productTagText}>
-                              {colorDisplay}
-                            </Text>
+                            <Text style={styles.productTagText}>{colorDisplay}</Text>
                           </View>
                         </View>
+
+                        {/* Botones Modificar / Eliminar */}
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            marginTop: 8,
+                          }}
+                        >
+                          <TouchableOpacity
+                            onPress={() => router.push(`/product-details/${p.producto_id}`)}
+                          >
+                            <Text
+                              style={{
+                                color: "#2563eb",
+                                fontWeight: "600",
+                                marginRight: 16,
+                              }}
+                            >
+                              Modificar
+                            </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            onPress={() => handleRemoveProduct(i, productDisplay)}
+                          >
+                            <Text style={{ color: "#ef4444", fontWeight: "600" }}>
+                              Eliminar
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
-                    </View>
-                    
-                    <View style={styles.productFooter}>
-                      <View style={styles.quantityBadge}>
-                        <Text style={styles.quantityText}>
-                          {p.cantidad} {p.cantidad === 1 ? 'unidad' : 'unidades'}
-                        </Text>
-                      </View>
-                      <View style={styles.priceContainer}>
+
+                      {/* Columna derecha: precios y cantidad */}
+                      <View
+                        style={{
+                          alignItems: "flex-end",
+                          justifyContent: "space-between",
+                          marginLeft: 12,
+                        }}
+                      >
+                        <Text style={styles.priceTotal}>${subtotal.toFixed(2)}</Text>
+
+
+                        <View style={styles.quantityControls}>
+                          <TouchableOpacity
+                            style={[
+                              styles.quantityButton,
+                              p.cantidad <= 1 && styles.quantityButtonDisabled,
+                            ]}
+                            onPress={() => handleUpdateQuantity(i, p.cantidad - 1)}
+                            disabled={p.cantidad <= 1}
+                          >
+                            <Text style={styles.quantityButtonText}>-</Text>
+                          </TouchableOpacity>
+
+                          <Text style={styles.quantityValue}>{p.cantidad}</Text>
+
+                          <TouchableOpacity
+                            style={styles.quantityButton}
+                            onPress={() => handleUpdateQuantity(i, p.cantidad + 1)}
+                          >
+                            <Text style={styles.quantityButtonText}>+</Text>
+                          </TouchableOpacity>
+                        </View>
                         <Text style={styles.priceLabel}>
                           ${Number(p.precio_unitario || 0).toFixed(2)} c/u
-                        </Text>
-                        <Text style={styles.priceTotal}>
-                          ${subtotal.toFixed(2)}
                         </Text>
                       </View>
                     </View>
@@ -237,6 +311,7 @@ export default function NewSaleScreen() {
                 );
               })}
             </View>
+
           )}
         </View>
 
@@ -309,7 +384,7 @@ export default function NewSaleScreen() {
           <View style={styles.infoBox}>
             <Text style={styles.infoIcon}></Text>
             <Text style={styles.infoText}>
-            Los datos del cliente son opcionales pero ayudan a enviar confirmaciones y mantener historial
+              Los datos del cliente son opcionales pero ayudan a enviar confirmaciones y mantener historial
             </Text>
           </View>
         </View>
@@ -371,13 +446,13 @@ const LIGHT_SHADOW = {
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: "#F1F5F9" 
+  container: {
+    flex: 1,
+    backgroundColor: "#F1F5F9"
   },
-  center: { 
-    justifyContent: "center", 
-    alignItems: "center" 
+  center: {
+    justifyContent: "center",
+    alignItems: "center"
   },
 
   loadingCard: {
@@ -401,7 +476,7 @@ const styles = StyleSheet.create({
 
   header: {
     backgroundColor: "#1e40af",
-    paddingTop: Platform.OS === "ios" ? 56 : 20,
+    paddingTop: Platform.OS === "ios" ? 56 : 40,
     paddingBottom: 24,
     paddingHorizontal: 20,
     borderBottomLeftRadius: 24,
@@ -413,9 +488,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
-  headerTitle: { 
-    color: "#fff", 
-    fontSize: 28, 
+  headerTitle: {
+    color: "#fff",
+    fontSize: 28,
     fontWeight: "800",
     marginBottom: 4,
   },
@@ -445,13 +520,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  scroll: { 
-    flex: 1 
+  scroll: {
+    flex: 1
   },
-  scrollContent: { 
-    padding: 20, 
+  scrollContent: {
+    padding: 20,
     paddingTop: 16,
-    paddingBottom: 120 
+    paddingBottom: 120
   },
 
   summaryCard: {
@@ -512,12 +587,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 16,
   },
-  cardTitle: { 
-    fontSize: 18, 
-    fontWeight: "800", 
-    color: "#0F172A" 
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A"
   },
-  
+
   addButton: {
     backgroundColor: "#DBEAFE",
     paddingHorizontal: 16,
@@ -580,6 +655,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
+    position: 'relative',
   },
   productItemLast: {
     borderBottomWidth: 0,
@@ -624,23 +700,53 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   removeButton: {
-    width: 32,
-    height: 32,
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    padding: 8,
     borderRadius: 16,
-    backgroundColor: "#FEE2E2",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: '#fee2e2',
   },
   removeButtonText: {
-    color: "#DC2626",
-    fontSize: 24,
-    fontWeight: "700",
-    lineHeight: 24,
+    color: '#ef4444',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   productFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginTop: 12,
+  },
+  quantityControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    padding: 4,
+  },
+  quantityButton: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#d1d5db',
+    borderRadius: 6,
+  },
+  quantityButtonDisabled: {
+    backgroundColor: '#e5e7eb',
+  },
+  quantityButtonText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#374151',
+  },
+  quantityValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    minWidth: 40,
+    textAlign: 'center',
   },
   quantityBadge: {
     backgroundColor: "#DBEAFE",
@@ -662,7 +768,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   priceTotal: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: "800",
     color: "#0F172A",
     fontVariant: ["tabular-nums"],
@@ -671,10 +777,10 @@ const styles = StyleSheet.create({
   formGroup: {
     marginBottom: 20,
   },
-  label: { 
-    fontSize: 14, 
-    fontWeight: "700", 
-    color: "#334155", 
+  label: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#334155",
     marginBottom: 10,
   },
   labelIcon: {
@@ -691,13 +797,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#0F172A",
   },
-  inputError: { 
-    borderColor: "#EF4444", 
+  inputError: {
+    borderColor: "#EF4444",
     backgroundColor: "#FEF2F2",
   },
-  errorText: { 
-    marginTop: 8, 
-    fontSize: 13, 
+  errorText: {
+    marginTop: 8,
+    fontSize: 13,
     color: "#EF4444",
     fontWeight: "600",
   },
