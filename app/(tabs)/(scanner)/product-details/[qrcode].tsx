@@ -108,6 +108,14 @@ const ProductDetailScreen = () => {
     setQty(clamp(n, 1, Math.max(1, max)));
   };
 
+
+  const producto_nombre = [
+  product?.tipo?.nombre,
+  product?.marca?.nombre,
+  product?.categoria?.nombre,
+].filter(Boolean).join(" ");
+
+
   const handleAddToSale = () => {
     if (!product || !variant || !talla_id || !color_id) {
       Alert.alert("Faltan variaciones", "Selecciona talla y color.");
@@ -165,6 +173,7 @@ const ProductDetailScreen = () => {
           cantidad: qty,
           precio_unitario: precioUnit,
           ...({ talla_label, color_label } as any),
+          producto_nombre,
         } as any)
       );
     }
@@ -194,6 +203,7 @@ const ProductDetailScreen = () => {
           cantidad,
           precio_unitario: precioUnit,
           ...({ talla_label, color_label } as any),
+          producto_nombre,
         } as any)
       );
       Alert.alert(
