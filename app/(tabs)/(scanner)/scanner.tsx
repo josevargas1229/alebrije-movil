@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Text, View, StyleSheet, Alert, TouchableOpacity, Dimensions } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';  // Importado para reinicio automático
+import { useFocusEffect } from '@react-navigation/native'; 
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
