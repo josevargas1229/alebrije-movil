@@ -6,14 +6,13 @@ import {
   Alert,
   ScrollView,
   Platform,
-  Switch,
+  TouchableOpacity,
+  StatusBar,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/store";
 import {
   startNewOrder,
-  setRecogerEnTienda,
-  setDireccion,
   clearDraft,
 } from "@/store/slices/salesSlice";
 import ThemedTextInput from "@/components/ThemedTextInput";
@@ -32,9 +31,8 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function NewSaleScreen() {
   const dispatch = useDispatch<any>();
   const draft = useSelector((s: RootState) => s.sales.draft);
-  const activeSaleId = useSelector((s: RootState) => s.sales.activeSaleId); // <-- opcional: ver puntero global
+  const activeSaleId = useSelector((s: RootState) => s.sales.activeSaleId);
 
-  // Formulario opcional de cliente (estado local)
   const [customer, setCustomer] = useState({
     nombre: "",
     telefono: "",
@@ -51,7 +49,10 @@ export default function NewSaleScreen() {
   if (!draft) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text style={styles.muted}>Cargando borrador…</Text>
+        <View style={styles.loadingCard}>
+          <View style={styles.loadingDot} />
+          <Text style={styles.loadingText}>Preparando nueva venta...</Text>
+        </View>
       </View>
     );
   }
@@ -83,7 +84,6 @@ export default function NewSaleScreen() {
   const handleSave = () => {
     const next: Errors = { ...errors };
 
-    // Dirección (opcional)
     if (draft.direccion_id !== null && draft.direccion_id !== undefined) {
       if (!Number.isInteger(draft.direccion_id) || draft.direccion_id <= 0) {
         next.direccion_id =
@@ -93,7 +93,6 @@ export default function NewSaleScreen() {
       }
     }
 
-    // Cliente (solo valida si hay valores)
     if (customer.nombre && customer.nombre.trim().length < 3)
       next.nombre = "El nombre debe tener al menos 3 caracteres.";
     if (customer.telefono) {
@@ -111,150 +110,217 @@ export default function NewSaleScreen() {
     }
 
     Alert.alert("Guardado", "Borrador guardado (en memoria Redux).");
-    // Reset borrador y formulario
     dispatch(clearDraft());
     dispatch(startNewOrder());
     setCustomer({ nombre: "", telefono: "", email: "" });
     setErrors({});
   };
 
+  const totalProductos = draft.productos.reduce((sum, p) => sum + p.cantidad, 0);
+  const statusLabel: Record<"en_proceso" | "finalizada" | "cancelada", string> = {
+  en_proceso: "Borrador",
+  finalizada: "Finalizada",
+  cancelada: "Cancelada",
+};
+
+
   return (
     <View style={styles.container}>
-      {/* Header */}
+      <StatusBar barStyle="light-content" backgroundColor="#1e40af" />
+      
+      {/* Header Mejorado */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Nueva venta</Text>
-        <Text style={styles.headerSubtitle}>
-          Estado: {draft.status.replace("_", " ")}
-          {activeSaleId ? ` · Activa: ${activeSaleId.slice(0, 6)}` : ""}
-        </Text>
-      </View>
-
-      {/* Productos en la venta */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Productos en la venta</Text>
-        <View style={{ height: 12 }} />
-        {draft.productos.length === 0 ? (
-          <Text style={{ color: "#64748B" }}>
-            Aún no hay productos. Agrégalos desde el detalle.
-          </Text>
-        ) : (
-          draft.productos.map((p, i) => {
-            const subtotal = (p.precio_unitario || 0) * p.cantidad;
-            // Usa etiquetas legibles si vienen adjuntas desde qrcode.tsx
-            const tallaDisplay = (p as any).talla_label ?? p.talla_id;
-            const colorDisplay = (p as any).color_label ?? p.color_id;
-            return (
-              <View
-                key={`${p.producto_id}-${p.talla_id}-${p.color_id}-${i}`}
-                style={{
-                  paddingVertical: 8,
-                  borderBottomWidth: i === draft.productos.length - 1 ? 0 : 1,
-                  borderBottomColor: "#E2E8F0",
-                }}
-              >
-                <Text style={{ fontWeight: "700", color: "#0F172A" }}>
-                  Prod #{p.producto_id} · Talla {tallaDisplay} · Color{" "}
-                  {colorDisplay}
-                </Text>
-                <Text style={{ color: "#334155" }}>
-                  Cant: {p.cantidad} | PU: $
-                  {Number(p.precio_unitario || 0).toFixed(2)} | Subtotal: $
-                  {subtotal.toFixed(2)}
-                </Text>
-              </View>
-            );
-          })
-        )}
+        <View style={styles.headerContent}>
+          <View>
+            <Text style={styles.headerTitle}>Nueva Venta</Text>
+            <Text style={styles.headerSubtitle}>
+              {draft.orderNumber}
+            </Text>
+          </View>
+          <View style={styles.statusBadge}>
+            <View style={styles.statusDot} />
+          <Text style={styles.statusText}>{statusLabel[draft.status]}</Text>
+          </View>
+        </View>
       </View>
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={{ padding: 20, paddingBottom: 120 }}
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Resumen */}
-        <View style={styles.card}>
-          <View style={styles.cardRowBetween}>
-            <Text style={styles.cardTitle}>Resumen</Text>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{draft.orderNumber}</Text>
+        {/* Tarjeta de Resumen Principal */}
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Productos</Text>
+              <Text style={styles.summaryValue}>{draft.productos.length}</Text>
+              <Text style={styles.summarySubtext}>{totalProductos} unidades</Text>
+            </View>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Total</Text>
+              <Text style={styles.summaryValuePrice}>
+                ${draft.total.toFixed(2)}
+              </Text>
+              <Text style={styles.summarySubtext}>{createdAt.toLocaleDateString()}</Text>
             </View>
           </View>
-          <View style={styles.separator} />
-          <Row label="Fecha de creación" value={createdStr} />
-          <Row label="Productos" value={String(draft.productos.length)} />
-          <Row label="Total" value={`$ ${draft.total.toFixed(2)}`} />
         </View>
 
-        {/* Cliente (opcional) */}
+        {/* Lista de Productos */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Datos del cliente (opcional)</Text>
-          <View style={{ height: 12 }} />
-
-          <Text style={styles.label}>Nombre completo</Text>
-          <ThemedTextInput
-            placeholder="Ingresa el nombre del cliente"
-            value={customer.nombre}
-            onChangeText={(v) => {
-              setCustomer((c) => ({ ...c, nombre: v }));
-              validateCustomerField({ nombre: v });
-            }}
-            style={[styles.input, errors.nombre ? styles.inputError : null]}
-          />
-          {errors.nombre ? (
-            <Text style={styles.errorText}>{errors.nombre}</Text>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Productos</Text>
+          </View>
+          
+          {draft.productos.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>No hay productos</Text>
+              <Text style={styles.emptyText}>
+                Agrega productos a esta venta para continuar
+              </Text>
+            </View>
           ) : (
-            <Text style={styles.helper}>Como aparece en factura o recibo.</Text>
-          )}
-
-          <View style={{ height: 16 }} />
-
-          <Text style={styles.label}>Teléfono</Text>
-          <ThemedTextInput
-            placeholder="Número de contacto"
-            value={customer.telefono}
-            onChangeText={(v) => {
-              setCustomer((c) => ({ ...c, telefono: v }));
-              validateCustomerField({ telefono: v });
-            }}
-            keyboardType="phone-pad"
-            style={[styles.input, errors.telefono ? styles.inputError : null]}
-          />
-          {errors.telefono ? (
-            <Text style={styles.errorText}>{errors.telefono}</Text>
-          ) : (
-            <Text style={styles.helper}>Entre 7 y 15 dígitos.</Text>
-          )}
-
-          <View style={{ height: 16 }} />
-
-          <Text style={styles.label}>Correo electrónico</Text>
-          <ThemedTextInput
-            placeholder="ejemplo@correo.com"
-            value={customer.email}
-            onChangeText={(v) => {
-              setCustomer((c) => ({ ...c, email: v }));
-              validateCustomerField({ email: v });
-            }}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            style={[styles.input, errors.email ? styles.inputError : null]}
-          />
-          {errors.email ? (
-            <Text style={styles.errorText}>{errors.email}</Text>
-          ) : (
-            <Text style={styles.helper}>
-              Para enviar confirmaciones y documentos.
-            </Text>
+            <View style={styles.productsList}>
+              {draft.productos.map((p, i) => {
+                const subtotal = (p.precio_unitario || 0) * p.cantidad;
+                const tallaDisplay = (p as any).talla_label ?? p.talla_id;
+                const colorDisplay = (p as any).color_label ?? p.color_id;
+                const productDisplay =
+                  (p as any).producto_nombre ?? `Producto #${p.producto_id}`;
+                
+                return (
+                  <View
+                    key={`${p.producto_id}-${p.talla_id}-${p.color_id}-${i}`}
+                    style={[
+                      styles.productItem,
+                      i === draft.productos.length - 1 && styles.productItemLast
+                    ]}
+                  >
+                    <View style={styles.productHeader}>
+                      <View style={styles.productInfo}>
+                        <Text style={styles.productLabel}>Producto:</Text>
+                        <Text style={styles.productName}>{productDisplay}</Text>
+                        <View style={styles.productDetails}>
+                          <View style={styles.productTag}>
+                            <Text style={styles.productTagText}>
+                              Talla {tallaDisplay}
+                            </Text>
+                          </View>
+                          <View style={styles.productTag}>
+                            <Text style={styles.productTagText}>
+                              {colorDisplay}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+                    
+                    <View style={styles.productFooter}>
+                      <View style={styles.quantityBadge}>
+                        <Text style={styles.quantityText}>
+                          {p.cantidad} {p.cantidad === 1 ? 'unidad' : 'unidades'}
+                        </Text>
+                      </View>
+                      <View style={styles.priceContainer}>
+                        <Text style={styles.priceLabel}>
+                          ${Number(p.precio_unitario || 0).toFixed(2)} c/u
+                        </Text>
+                        <Text style={styles.priceTotal}>
+                          ${subtotal.toFixed(2)}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
           )}
         </View>
+
+        {/* Datos del Cliente */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Cliente</Text>
+            <View style={styles.optionalBadge}>
+              <Text style={styles.optionalText}>Opcional</Text>
+            </View>
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>
+              <Text style={styles.labelIcon}></Text> Nombre completo
+            </Text>
+            <ThemedTextInput
+              placeholder="Ej: Juan Pérez García"
+              value={customer.nombre}
+              onChangeText={(v) => {
+                setCustomer((c) => ({ ...c, nombre: v }));
+                validateCustomerField({ nombre: v });
+              }}
+              style={[styles.input, errors.nombre && styles.inputError]}
+            />
+            {errors.nombre && (
+              <Text style={styles.errorText}>{errors.nombre}</Text>
+            )}
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>
+              <Text style={styles.labelIcon}></Text> Teléfono
+            </Text>
+            <ThemedTextInput
+              placeholder="Ej: 2281234567"
+              value={customer.telefono}
+              onChangeText={(v) => {
+                setCustomer((c) => ({ ...c, telefono: v }));
+                validateCustomerField({ telefono: v });
+              }}
+              keyboardType="phone-pad"
+              style={[styles.input, errors.telefono && styles.inputError]}
+            />
+            {errors.telefono && (
+              <Text style={styles.errorText}>{errors.telefono}</Text>
+            )}
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>
+              <Text style={styles.labelIcon}></Text> Correo electrónico
+            </Text>
+            <ThemedTextInput
+              placeholder="ejemplo@correo.com"
+              value={customer.email}
+              onChangeText={(v) => {
+                setCustomer((c) => ({ ...c, email: v }));
+                validateCustomerField({ email: v });
+              }}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              style={[styles.input, errors.email && styles.inputError]}
+            />
+            {errors.email && (
+              <Text style={styles.errorText}>{errors.email}</Text>
+            )}
+          </View>
+
+          <View style={styles.infoBox}>
+            <Text style={styles.infoIcon}></Text>
+            <Text style={styles.infoText}>
+            Los datos del cliente son opcionales pero ayudan a enviar confirmaciones y mantener historial
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Acciones */}
+      {/* Barra de Acciones Mejorada */}
       <View style={styles.actionsBar}>
-        <ThemedButton
-          title="Descartar"
+        <TouchableOpacity
+          style={styles.btnSecondary}
           onPress={() => {
             Alert.alert("Descartar borrador", "¿Eliminar el borrador actual?", [
               { text: "Cancelar", style: "cancel" },
@@ -270,107 +336,391 @@ export default function NewSaleScreen() {
               },
             ]);
           }}
-          style={styles.btnSecondary}
-        />
-        <ThemedButton
-          title="Proceder a la venta"
-          onPress={handleSave}
-          style={[styles.btnPrimary, hasErrors && { opacity: 0.6 }]}
-          disabled={hasErrors}
-        />
-      </View>
-    </View>
-  );
-}
+        >
+          <Text style={styles.btnSecondaryText}>Descartar</Text>
+        </TouchableOpacity>
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.metaRow}>
-      <Text style={styles.metaLabel}>{label}</Text>
-      <Text style={styles.metaValue}>{value}</Text>
+        <TouchableOpacity
+          style={[styles.btnPrimary, hasErrors && styles.btnDisabled]}
+          onPress={handleSave}
+          disabled={hasErrors}
+        >
+          <Text style={styles.btnPrimaryText}>
+            Proceder a la venta →
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const SHADOW = {
   shadowColor: "#000",
-  shadowOpacity: 0.06,
+  shadowOpacity: 0.08,
+  shadowRadius: 12,
+  shadowOffset: { width: 0, height: 4 },
+  elevation: 3,
+};
+
+const LIGHT_SHADOW = {
+  shadowColor: "#000",
+  shadowOpacity: 0.04,
   shadowRadius: 8,
   shadowOffset: { width: 0, height: 2 },
   elevation: 2,
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8FAFC" },
-  center: { justifyContent: "center", alignItems: "center" },
-  muted: { color: "#64748B" },
+  container: { 
+    flex: 1, 
+    backgroundColor: "#F1F5F9" 
+  },
+  center: { 
+    justifyContent: "center", 
+    alignItems: "center" 
+  },
+
+  loadingCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 32,
+    alignItems: "center",
+    ...SHADOW,
+  },
+  loadingDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#1e40af",
+    marginBottom: 16,
+  },
+  loadingText: {
+    color: "#64748B",
+    fontSize: 16,
+  },
 
   header: {
+    backgroundColor: "#1e40af",
     paddingTop: Platform.OS === "ios" ? 56 : 20,
-    paddingBottom: 16,
+    paddingBottom: 24,
     paddingHorizontal: 20,
-    backgroundColor: "#1e3a8a",
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    ...SHADOW,
   },
-  headerTitle: { color: "#fff", fontSize: 22, fontWeight: "800" },
+  headerContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  headerTitle: { 
+    color: "#fff", 
+    fontSize: 28, 
+    fontWeight: "800",
+    marginBottom: 4,
+  },
   headerSubtitle: {
-    color: "rgba(255,255,255,0.9)",
-    marginTop: 4,
-    fontSize: 13,
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.2)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#34D399",
+  },
+  statusText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
   },
 
-  scroll: { flex: 1 },
+  scroll: { 
+    flex: 1 
+  },
+  scrollContent: { 
+    padding: 20, 
+    paddingTop: 16,
+    paddingBottom: 120 
+  },
+
+  summaryCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    ...SHADOW,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  summaryItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  summaryLabel: {
+    fontSize: 13,
+    color: "#64748B",
+    marginBottom: 8,
+    fontWeight: "600",
+  },
+  summaryValue: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 4,
+  },
+  summaryValuePrice: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#1e40af",
+    marginBottom: 4,
+    fontVariant: ["tabular-nums"],
+  },
+  summarySubtext: {
+    fontSize: 12,
+    color: "#94A3B8",
+  },
+  summaryDivider: {
+    width: 1,
+    height: 60,
+    backgroundColor: "#E2E8F0",
+    marginHorizontal: 20,
+  },
 
   card: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 20,
+    padding: 20,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
     ...SHADOW,
   },
-  cardRowBetween: {
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  cardTitle: { 
+    fontSize: 18, 
+    fontWeight: "800", 
+    color: "#0F172A" 
+  },
+  
+  addButton: {
+    backgroundColor: "#DBEAFE",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#93C5FD",
+  },
+  addButtonText: {
+    color: "#1e40af",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+
+  optionalBadge: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  optionalText: {
+    color: "#64748B",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  emptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#F1F5F9",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  emptyIconText: {
+    fontSize: 28,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#334155",
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: "#64748B",
+    textAlign: "center",
+    paddingHorizontal: 20,
+  },
+
+  productsList: {
+    gap: 0,
+  },
+  productItem: {
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  productItemLast: {
+    borderBottomWidth: 0,
+  },
+  productHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  productInfo: {
+    flex: 1,
+  },
+  productLabel: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "600",
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  productName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: 8,
+  },
+  productDetails: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  productTag: {
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  productTagText: {
+    fontSize: 12,
+    color: "#475569",
+    fontWeight: "600",
+  },
+  removeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#FEE2E2",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  removeButtonText: {
+    color: "#DC2626",
+    fontSize: 24,
+    fontWeight: "700",
+    lineHeight: 24,
+  },
+  productFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: "#0F172A" },
-
-  badge: {
+  quantityBadge: {
     backgroundColor: "#DBEAFE",
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#93C5FD",
   },
-  badgeText: { color: "#1e3a8a", fontWeight: "700", fontSize: 12 },
-
-  separator: { height: 1, backgroundColor: "#E2E8F0", marginVertical: 12 },
-
-  metaRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 8,
+  quantityText: {
+    color: "#1e40af",
+    fontSize: 13,
+    fontWeight: "700",
   },
-  metaLabel: { color: "#64748B", fontSize: 13 },
-  metaValue: { color: "#0F172A", fontSize: 14, fontWeight: "600" },
+  priceContainer: {
+    alignItems: "flex-end",
+  },
+  priceLabel: {
+    fontSize: 12,
+    color: "#64748B",
+    marginBottom: 2,
+  },
+  priceTotal: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    fontVariant: ["tabular-nums"],
+  },
 
-  label: { fontSize: 14, fontWeight: "600", color: "#334155", marginBottom: 8 },
-
+  formGroup: {
+    marginBottom: 20,
+  },
+  label: { 
+    fontSize: 14, 
+    fontWeight: "700", 
+    color: "#334155", 
+    marginBottom: 10,
+  },
+  labelIcon: {
+    fontSize: 16,
+    marginRight: 4,
+  },
   input: {
-    height: 50,
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 10,
+    height: 52,
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
     paddingHorizontal: 16,
-    backgroundColor: "#fff",
+    backgroundColor: "#F8FAFC",
     fontSize: 15,
     color: "#0F172A",
   },
-  inputError: { borderColor: "#EF4444", borderWidth: 1.5 },
-  helper: { marginTop: 6, fontSize: 12, color: "#64748B" },
-  errorText: { marginTop: 6, fontSize: 12, color: "#EF4444" },
+  inputError: { 
+    borderColor: "#EF4444", 
+    backgroundColor: "#FEF2F2",
+  },
+  errorText: { 
+    marginTop: 8, 
+    fontSize: 13, 
+    color: "#EF4444",
+    fontWeight: "600",
+  },
+
+  infoBox: {
+    flexDirection: "row",
+    backgroundColor: "#F0F9FF",
+    padding: 14,
+    borderRadius: 12,
+    marginTop: 4,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#BAE6FD",
+  },
+  infoIcon: {
+    fontSize: 18,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#0369A1",
+    lineHeight: 18,
+  },
 
   actionsBar: {
     position: "absolute",
@@ -379,7 +729,7 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 20,
     paddingVertical: 16,
-    paddingBottom: Platform.OS === "ios" ? 28 : 16,
+    paddingBottom: Platform.OS === "ios" ? 34 : 16,
     backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#E2E8F0",
@@ -388,26 +738,35 @@ const styles = StyleSheet.create({
     ...SHADOW,
   },
   btnPrimary: {
-    flex: 1,
-    height: 50,
-    borderRadius: 10,
+    flex: 2,
+    height: 56,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#1e3a8a",
+    backgroundColor: "#1e40af",
+    ...LIGHT_SHADOW,
+  },
+  btnPrimaryText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
   },
   btnSecondary: {
     flex: 1,
-    height: 50,
-    borderRadius: 10,
+    height: 56,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#64748B",
+    backgroundColor: "#F1F5F9",
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
   },
-
-  paramRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  btnSecondaryText: {
+    color: "#475569",
+    fontSize: 15,
+    fontWeight: "700",
   },
-  paramLabel: { fontSize: 14, fontWeight: "600", color: "#334155" },
+  btnDisabled: {
+    opacity: 0.5,
+  },
 });
