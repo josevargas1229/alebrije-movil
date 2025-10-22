@@ -44,10 +44,10 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
-        name="new-sale"
+        name="(sales)"
         options={{
-          title: "Nueva venta",
-          tabBarLabel: "Venta",
+          title: "Ventas",
+          tabBarLabel: "Ventas",
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="tag.fill" color={color} />
           ),

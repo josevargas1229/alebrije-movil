@@ -9,6 +9,11 @@ export interface VentaProducto {
 }
 
 export type DraftStatus = "en_proceso" | "finalizada" | "cancelada";
+export const DRAFT_STATUS_LABELS: Record<DraftStatus, string> = {
+  en_proceso: "En proceso",
+  finalizada: "Finalizada",
+  cancelada: "Cancelada",
+};
 
 export interface DraftSale {
   id: string;
@@ -23,9 +28,11 @@ export interface DraftSale {
 }
 
 interface SalesState {
-  draft: DraftSale | null;
+  drafts: { [id: string]: DraftSale };
   activeSaleId: string | null;
 }
+
+const MAX_SALES = 3;
 
 const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
 const genOrderNumber = () => {
@@ -45,7 +52,7 @@ const recalcTotal = (productos: VentaProducto[]) =>
   productos.reduce((acc, p) => acc + (p.precio_unitario || 0) * p.cantidad, 0);
 
 const initialState: SalesState = {
-  draft: null,
+  drafts: {},
   activeSaleId: null,
 };
 
@@ -57,8 +64,12 @@ const salesSlice = createSlice({
       state,
       action: PayloadAction<{ usuario_id?: number | null } | undefined>
     ) {
-      state.draft = {
-        id: genId(),
+      if (Object.keys(state.drafts).length >= MAX_SALES) {
+        return;
+      }
+      const id = genId();
+      state.drafts[id] = {
+        id,
         orderNumber: genOrderNumber(),
         createdAt: new Date().toISOString(),
         usuario_id: action.payload?.usuario_id ?? null,
@@ -68,28 +79,32 @@ const salesSlice = createSlice({
         direccion_id: null,
         status: "en_proceso",
       };
-      state.activeSaleId = state.draft.id; // activa la nueva venta
+      state.activeSaleId = id;
     },
 
-    setUsuario(state, action: PayloadAction<number | null>) {
-      if (!state.draft) return;
-      state.draft.usuario_id = action.payload;
+    setUsuario(state, action: PayloadAction<{ id: string; usuario_id: number | null }>) {
+      const { id, usuario_id } = action.payload;
+      if (!state.drafts[id]) return;
+      state.drafts[id].usuario_id = usuario_id;
     },
 
-    setRecogerEnTienda(state, action: PayloadAction<boolean>) {
-      if (!state.draft) return;
-      state.draft.recogerEnTienda = action.payload;
+    setRecogerEnTienda(state, action: PayloadAction<{ id: string; value: boolean }>) {
+      const { id, value } = action.payload;
+      if (!state.drafts[id]) return;
+      state.drafts[id].recogerEnTienda = value;
     },
 
-    setDireccion(state, action: PayloadAction<number | null>) {
-      if (!state.draft) return;
-      state.draft.direccion_id = action.payload;
+    setDireccion(state, action: PayloadAction<{ id: string; direccion_id: number | null }>) {
+      const { id, direccion_id } = action.payload;
+      if (!state.drafts[id]) return;
+      state.drafts[id].direccion_id = direccion_id;
     },
 
-    addProducto(state, action: PayloadAction<VentaProducto>) {
-      if (!state.draft) return;
-      state.draft.productos.push(action.payload);
-      state.draft.total = recalcTotal(state.draft.productos);
+    addProducto(state, action: PayloadAction<{ id: string; producto: VentaProducto }>) {
+      const { id, producto } = action.payload;
+      if (!state.drafts[id]) return;
+      state.drafts[id].productos.push(producto);
+      state.drafts[id].total = recalcTotal(state.drafts[id].productos);
     },
 
     setActiveSale(state, action: PayloadAction<string | null>) {
@@ -98,35 +113,44 @@ const salesSlice = createSlice({
 
     updateProducto(
       state,
-      action: PayloadAction<{ index: number; patch: Partial<VentaProducto> }>
+      action: PayloadAction<{ id: string; index: number; patch: Partial<VentaProducto> }>
     ) {
-      if (!state.draft) return;
-      const { index, patch } = action.payload;
-      const curr = state.draft.productos[index];
+      const { id, index, patch } = action.payload;
+      if (!state.drafts[id]) return;
+      const curr = state.drafts[id].productos[index];
       if (!curr) return;
-      state.draft.productos[index] = { ...curr, ...patch };
-      state.draft.total = recalcTotal(state.draft.productos);
+      state.drafts[id].productos[index] = { ...curr, ...patch };
+      state.drafts[id].total = recalcTotal(state.drafts[id].productos);
     },
 
-    removeProducto(state, action: PayloadAction<number>) {
-      if (!state.draft) return;
-      state.draft.productos.splice(action.payload, 1);
-      state.draft.total = recalcTotal(state.draft.productos);
+    removeProducto(state, action: PayloadAction<{ id: string; index: number }>) {
+      const { id, index } = action.payload;
+      if (!state.drafts[id]) return;
+      state.drafts[id].productos.splice(index, 1);
+      state.drafts[id].total = recalcTotal(state.drafts[id].productos);
     },
 
-    clearProductos(state) {
-      if (!state.draft) return;
-      state.draft.productos = [];
-      state.draft.total = 0;
+    clearProductos(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      if (!state.drafts[id]) return;
+      state.drafts[id].productos = [];
+      state.drafts[id].total = 0;
     },
 
-    setStatus(state, action: PayloadAction<DraftStatus>) {
-      if (!state.draft) return;
-      state.draft.status = action.payload;
+    setStatus(state, action: PayloadAction<{ id: string; status: DraftStatus }>) {
+      const { id, status } = action.payload;
+      if (!state.drafts[id]) return;
+      state.drafts[id].status = status;
     },
 
-    clearDraft(state) {
-      state.draft = null;
+    clearDraft(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      delete state.drafts[id];
+      if (state.activeSaleId === id) state.activeSaleId = null;
+    },
+
+    clearAllDrafts(state) {
+      state.drafts = {};
       state.activeSaleId = null;
     },
   },
@@ -143,6 +167,7 @@ export const {
   clearProductos,
   setStatus,
   clearDraft,
+  clearAllDrafts,
   setActiveSale,
 } = salesSlice.actions;
 
