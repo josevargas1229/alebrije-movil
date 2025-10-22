@@ -1,4 +1,3 @@
-// qrcode.tsx
 import React, { useEffect, useState, useMemo } from "react";
 import {
   View,
@@ -17,13 +16,14 @@ import { Picker } from "@react-native-picker/picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/store";
-import { fetchProductByQR, clearError } from "@/store/slices/productSlice";
+import { fetchProductByQR, clearError, clearProduct } from "@/store/slices/productSlice";
 import {
   startNewOrder,
   addProducto,
   updateProducto,
-  setActiveSale,
+  VentaProducto,
 } from "@/store/slices/salesSlice";
+import { useFocusEffect } from '@react-navigation/native';
 
 const clamp = (n: number, min: number, max: number) =>
   Math.max(min, Math.min(max, n));
@@ -33,7 +33,10 @@ const ProductDetailScreen = () => {
   const dispatch = useDispatch<AppDispatch>();
   const router = useRouter();
   const { product, loading, error } = useSelector((s: RootState) => s.product);
-  const { draft, activeSaleId } = useSelector((s: RootState) => s.sales);
+  const { drafts, activeSaleId } = useSelector((s: RootState) => s.sales);
+  const activeDraft = activeSaleId ? drafts[activeSaleId] : null;
+  const [justCreated, setJustCreated] = useState(false);
+
 
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
@@ -44,22 +47,36 @@ const ProductDetailScreen = () => {
   const [showColorPicker, setShowColorPicker] = useState(false);
 
   useEffect(() => {
+    dispatch(clearProduct());
+    setSelectedSize(null);
+    setSelectedColor(null);
+    setAvailableStock(null);
+    setQty(1);
+  }, [dispatch]);
+
+  useFocusEffect(
+  React.useCallback(() => {
+    dispatch(clearProduct());
+    setSelectedSize(null);
+    setSelectedColor(null);
+    setAvailableStock(null);
+    setQty(1);
+    dispatch(clearError());
+  }, [dispatch])
+);
+
+  useEffect(() => {
+      dispatch(clearProduct());
     if (qrcode) dispatch(fetchProductByQR(qrcode));
     return () => {
       dispatch(clearError());
     };
   }, [qrcode, dispatch]);
 
-  // Asegura borrador y sincroniza puntero global
+  // Asegura venta activa si no hay
   useEffect(() => {
-    if (!draft) dispatch(startNewOrder());
-  }, [draft, dispatch]);
-
-  useEffect(() => {
-    if (draft && activeSaleId !== draft.id) {
-      dispatch(setActiveSale(draft.id));
-    }
-  }, [draft, activeSaleId, dispatch]);
+    if (!activeDraft && !activeSaleId) dispatch(startNewOrder());
+  }, [activeDraft, activeSaleId, dispatch]);
 
   useEffect(() => {
     if (product?.tallasColoresStock?.length) {
@@ -81,9 +98,16 @@ const ProductDetailScreen = () => {
 
   const handleRetry = () => {
     dispatch(clearError());
+      dispatch(clearProduct());
     if (qrcode) dispatch(fetchProductByQR(qrcode));
   };
-  const handleGoBack = () => router.back();
+  const handleGoBack = () => {
+    setSelectedSize(null);
+    setSelectedColor(null);
+    setAvailableStock(null);
+    setQty(1);
+    router.back()
+  };
 
   const variant = useMemo(() => {
     if (!product?.tallasColoresStock || !selectedSize || !selectedColor)
@@ -108,15 +132,17 @@ const ProductDetailScreen = () => {
     setQty(clamp(n, 1, Math.max(1, max)));
   };
 
-
   const producto_nombre = [
-  product?.tipo?.nombre,
-  product?.marca?.nombre,
-  product?.categoria?.nombre,
-].filter(Boolean).join(" ");
-
+    product?.tipo?.nombre,
+    product?.marca?.nombre,
+    product?.categoria?.nombre,
+  ].filter(Boolean).join(" ");
 
   const handleAddToSale = () => {
+    if (!activeSaleId) {
+      dispatch(startNewOrder());
+      return Alert.alert("Creando venta", "Se creó una venta nueva.");
+    }
     if (!product || !variant || !talla_id || !color_id) {
       Alert.alert("Faltan variaciones", "Selecciona talla y color.");
       return;
@@ -132,20 +158,19 @@ const ProductDetailScreen = () => {
       );
       return;
     }
-    if (!draft) dispatch(startNewOrder());
 
     const talla_label = selectedSize ?? "";
     const color_label = selectedColor ?? "";
 
-    const existingIndex = (draft?.productos || []).findIndex(
-      (p) =>
+    const existingIndex = (activeDraft?.productos || []).findIndex(
+      (p: VentaProducto) =>
         p.producto_id === product.id &&
         p.talla_id === talla_id &&
         p.color_id === color_id
     );
 
-    if (existingIndex >= 0 && draft) {
-      const currentQty = draft.productos[existingIndex].cantidad;
+    if (existingIndex >= 0 && activeDraft) {
+      const currentQty = activeDraft.productos[existingIndex].cantidad;
       const nextQty = currentQty + qty;
       if (nextQty > (availableStock ?? 0)) {
         Alert.alert(
@@ -156,6 +181,7 @@ const ProductDetailScreen = () => {
       }
       dispatch(
         updateProducto({
+          id: activeSaleId,
           index: existingIndex,
           patch: {
             cantidad: nextQty,
@@ -167,21 +193,24 @@ const ProductDetailScreen = () => {
     } else {
       dispatch(
         addProducto({
-          producto_id: product.id,
-          talla_id,
-          color_id,
-          cantidad: qty,
-          precio_unitario: precioUnit,
-          ...({ talla_label, color_label } as any),
-          producto_nombre,
-        } as any)
+          id: activeSaleId,
+          producto: {
+            producto_id: product.id,
+            talla_id,
+            color_id,
+            cantidad: qty,
+            precio_unitario: precioUnit,
+            ...({ talla_label, color_label } as any),
+            producto_nombre,
+          },
+        })
       );
     }
 
     Alert.alert(
       "Producto agregado",
       `Se agregó ${talla_label} - ${color_label} (x${qty}) a la venta actual.`,
-      [{ text: "OK" }]
+      [{ text: "OK", onPress: () => router.push(`/(sales)/${activeSaleId}`) }]
     );
   };
 
@@ -190,31 +219,36 @@ const ProductDetailScreen = () => {
       Alert.alert("Error", "No hay stock disponible.");
       return;
     }
+    if (!product || !variant || !talla_id || !color_id) {
+      Alert.alert("Faltan variaciones", "Selecciona talla y color.");
+      return;
+    }
+    setJustCreated(true);
     dispatch(startNewOrder());
-    if (product && variant && talla_id && color_id) {
-      const talla_label = selectedSize ?? "";
-      const color_label = selectedColor ?? "";
-      const cantidad = Math.min(qty, availableStock);
+    Alert.alert(
+      "Nueva venta creada",
+      "Redirigiendo a la nueva venta...",
+      [{ text: "OK", onPress: () => router.push(`/(sales)/${activeSaleId || ''}`) }]
+    );
+  };
+  useEffect(() => {
+    if (justCreated && activeSaleId && product && variant && talla_id && color_id) {
+      const cantidad = Math.min(qty, availableStock || 0);
       dispatch(
         addProducto({
-          producto_id: product.id,
-          talla_id,
-          color_id,
-          cantidad,
-          precio_unitario: precioUnit,
-          ...({ talla_label, color_label } as any),
-          producto_nombre,
-        } as any)
+          id: activeSaleId,
+          producto: {
+            producto_id: product.id,
+            talla_id,
+            color_id,
+            cantidad,
+            precio_unitario: precioUnit,
+          },
+        })
       );
-      Alert.alert(
-        "Nueva venta creada",
-        `Se creó una nueva venta con ${talla_label} - ${color_label} (x${cantidad}).`,
-        [{ text: "OK" }]
-      );
-    } else {
-      Alert.alert("Faltan variaciones", "Selecciona talla y color.");
+      setJustCreated(false);
     }
-  };
+  }, [justCreated, activeSaleId, product, variant, talla_id, color_id, qty, availableStock, dispatch, precioUnit]);
 
   if (loading) {
     return (
@@ -259,7 +293,7 @@ const ProductDetailScreen = () => {
           <View style={styles.errorIconContainer}>
             <Text style={styles.errorIcon}>🔍</Text>
           </View>
-        <Text style={styles.errorTitle}>Producto no encontrado</Text>
+          <Text style={styles.errorTitle}>Producto no encontrado</Text>
           <Text style={styles.errorMessage}>
             No pudimos encontrar información para este código QR
           </Text>
@@ -276,17 +310,17 @@ const ProductDetailScreen = () => {
     );
   }
 
-  const availableSizes = product.tallasColoresStock
+  const availableSizes: string[] = product.tallasColoresStock
     .filter(
       (v: any) => !selectedColor || v?.coloresStock?.color === selectedColor
     )
     .map((v: any) => v?.talla?.talla)
-    .filter((x: any, i: number, arr: any[]) => arr.indexOf(x) === i);
+    .filter((x: string, i: number, arr: string[]) => arr.indexOf(x) === i);
 
-  const availableColors = product.tallasColoresStock
+  const availableColors: string[] = product.tallasColoresStock
     .filter((v: any) => !selectedSize || v?.talla?.talla === selectedSize)
     .map((v: any) => v?.coloresStock?.color)
-    .filter((x: any, i: number, arr: any[]) => arr.indexOf(x) === i);
+    .filter((x: string, i: number, arr: string[]) => arr.indexOf(x) === i);
 
   // Apertura con autoselección segura
   const openSizePicker = () => {
@@ -452,7 +486,32 @@ const ProductDetailScreen = () => {
           >
             <Text style={styles.secondaryButtonText}>Crear nueva venta</Text>
           </TouchableOpacity>
-
+          <TouchableOpacity
+            style={[
+              styles.secondaryButton,
+              !(selectedSize && selectedColor && availableStock && availableStock > 0) && styles.disabledButton,
+            ]}
+            onPress={() => {
+              if (!(selectedSize && selectedColor && availableStock && availableStock > 0)) return;
+              const productToAdd = {
+                producto_id: product.id,
+                talla_id,
+                color_id,
+                cantidad: qty,
+                precio_unitario: precioUnit,
+                talla_label: selectedSize ?? "",
+                color_label: selectedColor ?? "",
+                producto_nombre,
+              };
+              router.push({
+                pathname: "/(tabs)/(sales)",
+                params: { addProduct: JSON.stringify(productToAdd) },
+              });
+            }}
+            disabled={!(selectedSize && selectedColor && availableStock && availableStock > 0)}
+          >
+            <Text style={styles.secondaryButtonText}>Elegir venta</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.outlineButton} onPress={handleGoBack}>
             <Text style={styles.outlineButtonText}>Volver al escáner</Text>
           </TouchableOpacity>
@@ -484,6 +543,7 @@ const ProductDetailScreen = () => {
               style={[styles.modalPicker, { color: "#0f172a" }]}
               mode={Platform.OS === "android" ? "dialog" : undefined}
               dropdownIconColor="#0f172a"
+              dropdownIconRippleColor="#0f172a" // Opcional para Android
               itemStyle={styles.pickerItemIOS as any}
             >
               <Picker.Item label="Selecciona una talla" value={null} />
@@ -545,7 +605,6 @@ const ProductDetailScreen = () => {
     </SafeAreaView>
   );
 };
-
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#ffffff" },
   scrollView: { flex: 1 },

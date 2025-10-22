@@ -10,16 +10,17 @@ import {
   StatusBar,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { RootState } from "@/store";
 import {
   startNewOrder,
   clearDraft,
   updateProducto,
   removeProducto,
+  DraftStatus,
+  VentaProducto,
 } from "@/store/slices/salesSlice";
 import ThemedTextInput from "@/components/ThemedTextInput";
-import ThemedButton from "@/components/ThemedButton";
 
 type Errors = {
   direccion_id?: string;
@@ -33,8 +34,8 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function NewSaleScreen() {
   const dispatch = useDispatch<any>();
-  const draft = useSelector((s: RootState) => s.sales.draft);
-  const activeSaleId = useSelector((s: RootState) => s.sales.activeSaleId);
+  const { id } = useLocalSearchParams();
+  const sale = useSelector((s: RootState) => s.sales.drafts[id as string]);
   const router = useRouter();
   const [customer, setCustomer] = useState({
     nombre: "",
@@ -44,12 +45,15 @@ export default function NewSaleScreen() {
   const [errors, setErrors] = useState<Errors>({});
 
   useEffect(() => {
-    if (!draft) dispatch(startNewOrder());
-  }, [dispatch, draft]);
+    if (!sale) {
+      dispatch(startNewOrder());
+      router.replace("/(tabs)/(sales)");
+    }
+  }, [dispatch, sale, router]);
 
   const handleUpdateQuantity = (index: number, newQuantity: number) => {
     if (newQuantity > 0) {
-      dispatch(updateProducto({ index, patch: { cantidad: newQuantity } }));
+      dispatch(updateProducto({ id: id as string, index, patch: { cantidad: newQuantity } }));
     }
   };
 
@@ -62,7 +66,7 @@ export default function NewSaleScreen() {
         {
           text: "Eliminar",
           style: "destructive",
-          onPress: () => dispatch(removeProducto(index)),
+          onPress: () => dispatch(removeProducto({ id: id as string, index })),
         },
       ]
     );
@@ -70,19 +74,18 @@ export default function NewSaleScreen() {
 
   const hasErrors = useMemo(() => Object.keys(errors).length > 0, [errors]);
 
-  if (!draft) {
+  if (!sale) {
     return (
       <View style={[styles.container, styles.center]}>
         <View style={styles.loadingCard}>
           <View style={styles.loadingDot} />
-          <Text style={styles.loadingText}>Preparando nueva venta...</Text>
+          <Text style={styles.loadingText}>Cargando venta...</Text>
         </View>
       </View>
     );
   }
 
-  const createdAt = new Date(draft.createdAt);
-  const createdStr = `${createdAt.toLocaleDateString()} ${createdAt.toLocaleTimeString()}`;
+  const createdAt = new Date(sale.createdAt);
 
   const validateCustomerField = (patch: Partial<typeof customer>) => {
     const next: Errors = { ...errors };
@@ -108,8 +111,8 @@ export default function NewSaleScreen() {
   const handleSave = () => {
     const next: Errors = { ...errors };
 
-    if (draft.direccion_id !== null && draft.direccion_id !== undefined) {
-      if (!Number.isInteger(draft.direccion_id) || draft.direccion_id <= 0) {
+    if (sale.direccion_id !== null && sale.direccion_id !== undefined) {
+      if (!Number.isInteger(sale.direccion_id) || sale.direccion_id <= 0) {
         next.direccion_id =
           "La dirección debe ser un ID numérico válido (> 0) o dejarse vacío.";
       } else {
@@ -133,15 +136,22 @@ export default function NewSaleScreen() {
       return;
     }
 
-    Alert.alert("Guardado", "Borrador guardado (en memoria Redux).");
-    dispatch(clearDraft());
-    dispatch(startNewOrder());
-    setCustomer({ nombre: "", telefono: "", email: "" });
-    setErrors({});
+    Alert.alert("Guardado", "Venta guardada (en memoria Redux).", [
+      {
+        text: "OK",
+        onPress: () => {
+          dispatch(clearDraft(id as string));
+          dispatch(startNewOrder());
+          setCustomer({ nombre: "", telefono: "", email: "" });
+          setErrors({});
+          router.replace("/(tabs)/(sales)");
+        },
+      },
+    ]);
   };
 
-  const totalProductos = draft.productos.reduce((sum, p) => sum + p.cantidad, 0);
-  const statusLabel: Record<"en_proceso" | "finalizada" | "cancelada", string> = {
+  const totalProductos = sale.productos.reduce((sum: number, p: VentaProducto) => sum + p.cantidad, 0);
+  const statusLabel: Record<DraftStatus, string> = {
     en_proceso: "Borrador",
     finalizada: "Finalizada",
     cancelada: "Cancelada",
@@ -158,12 +168,12 @@ export default function NewSaleScreen() {
           <View>
             <Text style={styles.headerTitle}>Nueva Venta</Text>
             <Text style={styles.headerSubtitle}>
-              {draft.orderNumber}
+              {sale.orderNumber}
             </Text>
           </View>
           <View style={styles.statusBadge}>
             <View style={styles.statusDot} />
-            <Text style={styles.statusText}>{statusLabel[draft.status]}</Text>
+            <Text style={styles.statusText}>{statusLabel[sale.status]}</Text>
           </View>
         </View>
       </View>
@@ -179,14 +189,14 @@ export default function NewSaleScreen() {
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
               <Text style={styles.summaryLabel}>Productos</Text>
-              <Text style={styles.summaryValue}>{draft.productos.length}</Text>
+              <Text style={styles.summaryValue}>{sale.productos.length}</Text>
               <Text style={styles.summarySubtext}>{totalProductos} unidades</Text>
             </View>
             <View style={styles.summaryDivider} />
             <View style={styles.summaryItem}>
               <Text style={styles.summaryLabel}>Total</Text>
               <Text style={styles.summaryValuePrice}>
-                ${draft.total.toFixed(2)}
+                ${sale.total.toFixed(2)}
               </Text>
               <Text style={styles.summarySubtext}>{createdAt.toLocaleDateString()}</Text>
             </View>
@@ -199,119 +209,134 @@ export default function NewSaleScreen() {
             <Text style={styles.cardTitle}>Productos</Text>
           </View>
 
-          {draft.productos.length === 0 ? (
+          {sale.productos.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>No hay productos</Text>
               <Text style={styles.emptyText}>
                 Agrega productos a esta venta para continuar
               </Text>
+              <TouchableOpacity
+                style={styles.scanButton}
+                onPress={() => router.push({pathname:"/(tabs)/(scanner)/scanner"})}
+              >
+                <Text style={styles.scanButtonText}>📱 Escanear producto</Text>
+              </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.productsList}>
-              {draft.productos.map((p, i) => {
-                const subtotal = (p.precio_unitario || 0) * p.cantidad;
-                const tallaDisplay = (p as any).talla_label ?? p.talla_id;
-                const colorDisplay = (p as any).color_label ?? p.color_id;
-                const productDisplay =
-                  (p as any).producto_nombre ?? `Producto #${p.producto_id}`;
+            <View>
+              <View style={styles.productsList}>
+                {sale.productos.map((p, i) => {
+                  const subtotal = (p.precio_unitario || 0) * p.cantidad;
+                  const tallaDisplay = (p as any).talla_label ?? p.talla_id;
+                  const colorDisplay = (p as any).color_label ?? p.color_id;
+                  const productDisplay =
+                    (p as any).producto_nombre ?? `Producto #${p.producto_id}`;
 
-                return (
-                  <View
-                    key={`${p.producto_id}-${p.talla_id}-${p.color_id}-${i}`}
-                    style={[
-                      styles.productItem,
-                      i === draft.productos.length - 1 && styles.productItemLast,
-                    ]}
-                  >
-                    {/* Contenedor principal: izquierda info + derecha precios */}
-                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      {/* Columna izquierda */}
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.productName}>{productDisplay}</Text>
+                  return (
+                    <View
+                      key={`${p.producto_id}-${p.talla_id}-${p.color_id}-${i}`}
+                      style={[
+                        styles.productItem,
+                        i === sale.productos.length - 1 && styles.productItemLast,
+                      ]}
+                    >
+                      {/* Contenedor principal: izquierda info + derecha precios */}
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        {/* Columna izquierda */}
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.productName}>{productDisplay}</Text>
 
-                        {/* Detalles: talla y color */}
-                        <View style={styles.productDetails}>
-                          <View style={styles.productTag}>
-                            <Text style={styles.productTagText}>Talla {tallaDisplay}</Text>
+                          {/* Detalles: talla y color */}
+                          <View style={styles.productDetails}>
+                            <View style={styles.productTag}>
+                              <Text style={styles.productTagText}>Talla {tallaDisplay}</Text>
+                            </View>
+                            <View style={styles.productTag}>
+                              <Text style={styles.productTagText}>{colorDisplay}</Text>
+                            </View>
                           </View>
-                          <View style={styles.productTag}>
-                            <Text style={styles.productTagText}>{colorDisplay}</Text>
+
+                          {/* Botones Modificar / Eliminar */}
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              marginTop: 8,
+                            }}
+                          >
+                            <TouchableOpacity
+                              onPress={() => router.push(`/product-details/${p.producto_id}`)}
+                            >
+                              <Text
+                                style={{
+                                  color: "#2563eb",
+                                  fontWeight: "600",
+                                  marginRight: 16,
+                                }}
+                              >
+                                Modificar
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              onPress={() => handleRemoveProduct(i, productDisplay)}
+                            >
+                              <Text style={{ color: "#ef4444", fontWeight: "600" }}>
+                                Eliminar
+                              </Text>
+                            </TouchableOpacity>
                           </View>
                         </View>
 
-                        {/* Botones Modificar / Eliminar */}
+                        {/* Columna derecha: precios y cantidad */}
                         <View
                           style={{
-                            flexDirection: "row",
-                            marginTop: 8,
+                            alignItems: "flex-end",
+                            justifyContent: "space-between",
+                            marginLeft: 12,
                           }}
                         >
-                          <TouchableOpacity
-                            onPress={() => router.push(`/product-details/${p.producto_id}`)}
-                          >
-                            <Text
-                              style={{
-                                color: "#2563eb",
-                                fontWeight: "600",
-                                marginRight: 16,
-                              }}
+                          <Text style={styles.priceTotal}>${subtotal.toFixed(2)}</Text>
+
+
+                          <View style={styles.quantityControls}>
+                            <TouchableOpacity
+                              style={[
+                                styles.quantityButton,
+                                p.cantidad <= 1 && styles.quantityButtonDisabled,
+                              ]}
+                              onPress={() => handleUpdateQuantity(i, p.cantidad - 1)}
+                              disabled={p.cantidad <= 1}
                             >
-                              Modificar
-                            </Text>
-                          </TouchableOpacity>
+                              <Text style={styles.quantityButtonText}>-</Text>
+                            </TouchableOpacity>
 
-                          <TouchableOpacity
-                            onPress={() => handleRemoveProduct(i, productDisplay)}
-                          >
-                            <Text style={{ color: "#ef4444", fontWeight: "600" }}>
-                              Eliminar
-                            </Text>
-                          </TouchableOpacity>
+                            <Text style={styles.quantityValue}>{p.cantidad}</Text>
+
+                            <TouchableOpacity
+                              style={styles.quantityButton}
+                              onPress={() => handleUpdateQuantity(i, p.cantidad + 1)}
+                            >
+                              <Text style={styles.quantityButtonText}>+</Text>
+                            </TouchableOpacity>
+                          </View>
+                          <Text style={styles.priceLabel}>
+                            ${Number(p.precio_unitario || 0).toFixed(2)} c/u
+                          </Text>
                         </View>
-                      </View>
-
-                      {/* Columna derecha: precios y cantidad */}
-                      <View
-                        style={{
-                          alignItems: "flex-end",
-                          justifyContent: "space-between",
-                          marginLeft: 12,
-                        }}
-                      >
-                        <Text style={styles.priceTotal}>${subtotal.toFixed(2)}</Text>
-
-
-                        <View style={styles.quantityControls}>
-                          <TouchableOpacity
-                            style={[
-                              styles.quantityButton,
-                              p.cantidad <= 1 && styles.quantityButtonDisabled,
-                            ]}
-                            onPress={() => handleUpdateQuantity(i, p.cantidad - 1)}
-                            disabled={p.cantidad <= 1}
-                          >
-                            <Text style={styles.quantityButtonText}>-</Text>
-                          </TouchableOpacity>
-
-                          <Text style={styles.quantityValue}>{p.cantidad}</Text>
-
-                          <TouchableOpacity
-                            style={styles.quantityButton}
-                            onPress={() => handleUpdateQuantity(i, p.cantidad + 1)}
-                          >
-                            <Text style={styles.quantityButtonText}>+</Text>
-                          </TouchableOpacity>
-                        </View>
-                        <Text style={styles.priceLabel}>
-                          ${Number(p.precio_unitario || 0).toFixed(2)} c/u
-                        </Text>
                       </View>
                     </View>
-                  </View>
-                );
-              })}
+                  );
+                })}
+              </View>
+              <View style={styles.addProductSection}>
+                <TouchableOpacity
+                  style={styles.scanButton}
+                  onPress={() => router.push({pathname:"/(tabs)/(scanner)/scanner"})}
+                >
+                  <Text style={styles.scanButtonText}>+ Escanear más productos</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-
           )}
         </View>
 
@@ -397,16 +422,16 @@ export default function NewSaleScreen() {
         <TouchableOpacity
           style={styles.btnSecondary}
           onPress={() => {
-            Alert.alert("Descartar borrador", "¿Eliminar el borrador actual?", [
+            Alert.alert("Descartar venta", "¿Eliminar esta venta?", [
               { text: "Cancelar", style: "cancel" },
               {
                 text: "Eliminar",
                 style: "destructive",
                 onPress: () => {
-                  dispatch(clearDraft());
-                  dispatch(startNewOrder());
+                  dispatch(clearDraft(id as string));
                   setCustomer({ nombre: "", telefono: "", email: "" });
                   setErrors({});
+                  router.replace("/(tabs)/(sales)");
                 },
               },
             ]);
@@ -592,7 +617,26 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#0F172A"
   },
-
+  scanButton: {
+    backgroundColor: "#1e40af",
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 20,
+    ...LIGHT_SHADOW,
+  },
+  scanButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  addProductSection: {
+    paddingTop: 20,
+    paddingBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
   addButton: {
     backgroundColor: "#DBEAFE",
     paddingHorizontal: 16,

@@ -20,6 +20,7 @@ const MAPPING = {
   "chevron.right": "chevron-right",
   "qrcode": "qr-code-2",
   "tag.fill": "sell",
+  "trash.fill": "delete",
 } as IconMapping;
 
 
