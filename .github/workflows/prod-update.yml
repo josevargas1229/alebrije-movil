@@ -37,3 +37,6 @@ jobs:
           name: jest-junit-prod-${{ matrix.node-version }}
           path: reports/jest-junit.xml
       - run: npm run eas:update:prod
+        env:
+            EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+              
