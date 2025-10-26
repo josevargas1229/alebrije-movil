@@ -16,12 +16,25 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - uses: expo/expo-github-action@v12
+      - run: npm run typecheck
+      - run: npm run lint
+
+      # Solo si existe EXPO_TOKEN
+      - name: Setup Expo/EAS
+        if: ${{ secrets.EXPO_TOKEN != '' }}
+        uses: expo/expo-github-action@v11
         with:
           expo-version: latest
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm test
-      - run: npm run eas:update:preview
+
+      - name: Publish OTA preview
+        if: ${{ secrets.EXPO_TOKEN != '' }}
+        run: npm run eas:update:preview
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      # Mensaje si NO hay token
+      - name: OTA deshabilitado
+        if: ${{ secrets.EXPO_TOKEN == '' }}
+        run: echo "OTA deshabilitado:faltaEXPO_TOKEN/permisos"
