@@ -19,7 +19,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-<<<<<<< HEAD
+
       - uses: expo/expo-github-action@v8
         with:
           expo-version: latest
@@ -41,7 +41,7 @@ jobs:
           name: jest-junit-preview-${{ matrix.node-version }}
           path: reports/jest-junit.xml
       - run: npm run eas:update:preview
-=======
+
       - run: npm run typecheck
       - run: npm run lint
 
@@ -62,4 +62,4 @@ jobs:
       - name: OTA deshabilitado
         if: ${{ env.EXPO_TOKEN == '' }}
         run: echo "OTA deshabilitado:falta EXPO_TOKEN/permisos"
->>>>>>> 41edd8822882e837cf76a2e59f9c0708dbd9bb8c
+

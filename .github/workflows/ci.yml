@@ -18,7 +18,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-<<<<<<< HEAD
+
       # usar cobertura en CI
       - run: npm run test:ci
       # subir cobertura
@@ -33,5 +33,4 @@ jobs:
         with:
           name: jest-junit-${{ matrix.node-version }}
           path: reports/jest-junit.xml
-=======
->>>>>>> 41edd8822882e837cf76a2e59f9c0708dbd9bb8c
+
