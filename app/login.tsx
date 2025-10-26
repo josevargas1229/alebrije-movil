@@ -6,14 +6,15 @@ import {
   Image,
   TouchableOpacity,
 } from "react-native";
-import { useDispatch, useSelector } from "react-redux";
+import { useSelector } from "react-redux";
+import { useAppDispatch } from "@/hooks/use-app-dispatch";
 import { login } from "@/store/slices/authSlice";
 import ThemedTextInput from "@/components/ThemedTextInput";
 import ThemedButton from "@/components/ThemedButton";
 import { router } from "expo-router";
 
 export default function LoginScreen() {
-  const dispatch = useDispatch<any>();
+  const dispatch = useAppDispatch();
   const { loading, error, user } = useSelector((state: any) => state.auth);
 
   const [email, setEmail] = useState("");

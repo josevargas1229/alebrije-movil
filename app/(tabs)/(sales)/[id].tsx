@@ -9,16 +9,15 @@ import {
   TouchableOpacity,
   StatusBar,
 } from "react-native";
-import { useDispatch, useSelector } from "react-redux";
+import { useAppDispatch, useAppSelector } from "@/hooks/use-app-dispatch";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import type { DraftSale, DraftStatus, VentaProducto } from "@/store/slices/salesSlice";
 import { RootState } from "@/store";
 import {
   startNewOrder,
   clearDraft,
   updateProducto,
   removeProducto,
-  DraftStatus,
-  VentaProducto,
 } from "@/store/slices/salesSlice";
 import ThemedTextInput from "@/components/ThemedTextInput";
 
@@ -33,9 +32,9 @@ const onlyDigits = (s: string) => s.replace(/\D+/g, "");
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function NewSaleScreen() {
-  const dispatch = useDispatch<any>();
+  const dispatch = useAppDispatch();
   const { id } = useLocalSearchParams();
-  const sale = useSelector((s: RootState) => s.sales.drafts[id as string]);
+  const sale = useAppSelector((s: RootState) => s.sales.drafts[id as string]) as DraftSale | undefined;
   const router = useRouter();
   const [customer, setCustomer] = useState({
     nombre: "",
@@ -225,7 +224,7 @@ export default function NewSaleScreen() {
           ) : (
             <View>
               <View style={styles.productsList}>
-                {sale.productos.map((p, i) => {
+                {sale.productos.map((p: VentaProducto, i: number) => {
                   const subtotal = (p.precio_unitario || 0) * p.cantidad;
                   const tallaDisplay = (p as any).talla_label ?? p.talla_id;
                   const colorDisplay = (p as any).color_label ?? p.color_id;

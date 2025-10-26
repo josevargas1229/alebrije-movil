@@ -1,26 +1,29 @@
 import React from "react";
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from "react-native";
 import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import { useDispatch, useSelector } from "react-redux";
-import { RootState } from "@/store";
-import { startNewOrder, setActiveSale, clearDraft, DRAFT_STATUS_LABELS, DraftSale, addProducto } from "@/store/slices/salesSlice";
+import { useAppDispatch, useAppSelector } from "@/hooks/use-app-dispatch";
+import type { RootState } from "@/store";
+import { startNewOrder, setActiveSale, clearDraft, DRAFT_STATUS_LABELS, addProducto } from "@/store/slices/salesSlice";
+import type { DraftSale, VentaProducto } from "@/store/slices/salesSlice";
 import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
 import { IconSymbol } from "@/components/ui/icon-symbol";
 
 export default function SalesListScreen() {
-    const dispatch = useDispatch();
-    const { drafts, activeSaleId } = useSelector((state: RootState) => state.sales);
-    const activeDrafts = Object.values(drafts).filter(d => d.status === "en_proceso");
-    const completedDrafts = Object.values(drafts).filter(d => d.status !== "en_proceso");
+    const dispatch = useAppDispatch();
+    const { drafts, activeSaleId } = useAppSelector((state: RootState) => state.sales);
+    const activeDrafts = (Object.values(drafts) as DraftSale[]).filter(d => d.status === "en_proceso");
+    const completedDrafts = (Object.values(drafts) as DraftSale[]).filter(d => d.status !== "en_proceso");
     const router = useRouter();
     const params = useLocalSearchParams<{ addProduct?: string }>();
     const navigation = useNavigation<any>();
-    const productToAdd = params.addProduct ? JSON.parse(params.addProduct) : null;
+    const productToAdd: VentaProducto | null = params.addProduct
+     ? (JSON.parse(params.addProduct) as VentaProducto)
+     : null;
 
     const handleSelectSale = (saleId: string) => {
         dispatch(setActiveSale(saleId));
         if (productToAdd) {
-            dispatch(addProducto({ id: saleId, producto: productToAdd }));
+            dispatch(addProducto({ id: saleId, producto: productToAdd as VentaProducto }));
             Alert.alert("Agregado", "Producto añadido a la venta seleccionada.");
             navigation.setParams( { addProduct: undefined } );
         }
@@ -30,7 +33,7 @@ export default function SalesListScreen() {
     const handleNewSale = () => {
         dispatch(startNewOrder());
         if (productToAdd && activeSaleId) {
-            dispatch(addProducto({ id: activeSaleId, producto: productToAdd }));
+            dispatch(addProducto({ id: activeSaleId, producto: productToAdd as VentaProducto }));
             Alert.alert("Agregado", "Producto añadido a la nueva venta.");
             router.push(`/(sales)/${activeSaleId}`);
             navigation.setParams( { addProduct: undefined } );
