@@ -24,7 +24,7 @@ jobs:
 
       - name: Setup Expo/EAS
         if: ${{ env.EXPO_TOKEN != '' }}
-        uses: expo/expo-github-action@v11
+        uses: expo/expo-github-action@v8
         with:
           expo-version: latest
           eas-version: latest
