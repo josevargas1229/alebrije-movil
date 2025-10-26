@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,15 +21,28 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - uses: expo/expo-github-action@v12
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+      # Solo si existe EXPO_TOKEN
+      - name: Setup Expo/EAS
+        if: ${{ secrets.EXPO_TOKEN != '' }}
+        uses: expo/expo-github-action@v11
         with:
           expo-version: latest
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm test
+
       - name: EAS Build
+        if: ${{ secrets.EXPO_TOKEN != '' }}
         run: |
           if [ "${{ matrix.platform }}" = "android" ]; then npm run eas:build:android; fi
           if [ "${{ matrix.platform }}" = "ios" ]; then npm run eas:build:ios; fi
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      # Aviso si no hay token
+      - name: Build deshabilitado
+        if: ${{ secrets.EXPO_TOKEN == '' }}
+        run: echo "Build EAS deshabilitado:falta EXPO_TOKEN/permisos"
