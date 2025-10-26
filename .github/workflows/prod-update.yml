@@ -23,4 +23,17 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
       - run: npm run typecheck
       - run: npm run lint
+      # --- Ejecuta tests con Jest antes de desplegar
+      - run: npm run test:ci
+      # --- Sube cobertura y reporte JUnit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-prod-${{ matrix.node-version }}
+          path: coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jest-junit-prod-${{ matrix.node-version }}
+          path: reports/jest-junit.xml
       - run: npm run eas:update:prod

@@ -20,14 +20,26 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - uses: expo/expo-github-action@v12
+      - uses: expo/expo-github-action@v8
         with:
           expo-version: latest
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
+      # --- Ejecuta tests con cobertura
+      - run: npm run test:ci
+      # --- Sube artifacts de cobertura y reporte JUnit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-release-${{ matrix.platform }}-${{ matrix.node-version }}
+          path: coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jest-junit-release-${{ matrix.platform }}-${{ matrix.node-version }}
+          path: reports/jest-junit.xml
       - name: EAS Build
         run: |
           if [ "${{ matrix.platform }}" = "android" ]; then npm run eas:build:android; fi

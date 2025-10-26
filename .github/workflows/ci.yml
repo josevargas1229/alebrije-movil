@@ -18,4 +18,17 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
+      # usar cobertura en CI
+      - run: npm run test:ci
+      # subir cobertura
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ matrix.node-version }}
+          path: coverage
+      # subir reporte JUnit (requiere jest-junit y config en jest.config.mjs)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jest-junit-${{ matrix.node-version }}
+          path: reports/jest-junit.xml

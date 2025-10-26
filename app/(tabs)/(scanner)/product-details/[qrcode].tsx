@@ -23,20 +23,48 @@ import {
   updateProducto,
   VentaProducto,
 } from "@/store/slices/salesSlice";
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from "@react-navigation/native";
 
+/* ===== Tipos locales ===== */
+type Imagen = { url: string };
+type Talla = { id?: string | number; talla: string };
+type ColorStock = { id?: string | number; color: string; imagenes?: Imagen[] };
+type Variant = { talla?: Talla; coloresStock?: ColorStock; stock?: number | null };
+
+type ProductLike = {
+  id: string | number;
+  precio: number | string;
+  tipo?: { nombre?: string };
+  marca?: { nombre?: string };
+  categoria?: { nombre?: string };
+  tallasColoresStock: Variant[];
+};
+
+const findVariant = (
+  p: ProductLike | null | undefined,
+  size: string | null,
+  color: string | null
+): Variant | undefined =>
+  p?.tallasColoresStock?.find(
+    (x) => x?.talla?.talla === size && x?.coloresStock?.color === color
+  );
+
+/* ===== Util ===== */
 const clamp = (n: number, min: number, max: number) =>
   Math.max(min, Math.min(max, n));
 
 const ProductDetailScreen = () => {
   const { qrcode } = useLocalSearchParams<{ qrcode: string }>();
-  const dispatch = useDispatch<AppDispatch>();
+  const dispatch = useDispatch() as AppDispatch;
   const router = useRouter();
-  const { product, loading, error } = useSelector((s: RootState) => s.product);
+  const { product, loading, error } = useSelector((s: RootState) => s.product) as {
+    product: ProductLike | null;
+    loading: boolean;
+    error: string | null;
+  };
   const { drafts, activeSaleId } = useSelector((s: RootState) => s.sales);
   const activeDraft = activeSaleId ? drafts[activeSaleId] : null;
   const [justCreated, setJustCreated] = useState(false);
-
 
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
@@ -55,25 +83,25 @@ const ProductDetailScreen = () => {
   }, [dispatch]);
 
   useFocusEffect(
-  React.useCallback(() => {
-    dispatch(clearProduct());
-    setSelectedSize(null);
-    setSelectedColor(null);
-    setAvailableStock(null);
-    setQty(1);
-    dispatch(clearError());
-  }, [dispatch])
-);
+    React.useCallback(() => {
+      dispatch(clearProduct());
+      setSelectedSize(null);
+      setSelectedColor(null);
+      setAvailableStock(null);
+      setQty(1);
+      dispatch(clearError());
+    }, [dispatch])
+  );
 
   useEffect(() => {
-      dispatch(clearProduct());
+    dispatch(clearProduct());
     if (qrcode) dispatch(fetchProductByQR(qrcode));
     return () => {
       dispatch(clearError());
     };
   }, [qrcode, dispatch]);
 
-  // Asegura venta activa si no hay
+  // Asegura venta activa
   useEffect(() => {
     if (!activeDraft && !activeSaleId) dispatch(startNewOrder());
   }, [activeDraft, activeSaleId, dispatch]);
@@ -86,45 +114,33 @@ const ProductDetailScreen = () => {
         setSelectedColor(first?.coloresStock?.color ?? null);
         setAvailableStock(first?.stock ?? null);
       } else {
-        const v = product.tallasColoresStock.find(
-          (x: any) =>
-            x?.talla?.talla === selectedSize &&
-            x?.coloresStock?.color === selectedColor
-        );
-        setAvailableStock(v ? v.stock : null);
+        const v = findVariant(product, selectedSize, selectedColor);
+        setAvailableStock(v ? v.stock ?? null : null);
       }
     }
   }, [product, selectedSize, selectedColor]);
 
   const handleRetry = () => {
     dispatch(clearError());
-      dispatch(clearProduct());
+    dispatch(clearProduct());
     if (qrcode) dispatch(fetchProductByQR(qrcode));
   };
+
   const handleGoBack = () => {
     setSelectedSize(null);
     setSelectedColor(null);
     setAvailableStock(null);
     setQty(1);
-    router.back()
+    router.back();
   };
 
-  const variant = useMemo(() => {
-    if (!product?.tallasColoresStock || !selectedSize || !selectedColor)
-      return null;
-    return (
-      product.tallasColoresStock.find(
-        (v: any) =>
-          v?.talla?.talla === selectedSize &&
-          v?.coloresStock?.color === selectedColor
-      ) || null
-    );
-  }, [product, selectedSize, selectedColor]);
+  const variant = useMemo(
+    () => (product && selectedSize && selectedColor ? findVariant(product, selectedSize, selectedColor) ?? null : null),
+    [product, selectedSize, selectedColor]
+  );
 
-  const talla_id =
-    (variant as any)?.talla?.id ?? (variant as any)?.talla_id ?? null;
-  const color_id =
-    (variant as any)?.coloresStock?.id ?? (variant as any)?.color_id ?? null;
+  const talla_id = variant?.talla?.id ?? (variant as any)?.talla_id ?? null;
+  const color_id = variant?.coloresStock?.id ?? (variant as any)?.color_id ?? null;
   const precioUnit = product ? Number(product.precio) : 0;
 
   const ensureValidQty = (n: number) => {
@@ -132,11 +148,9 @@ const ProductDetailScreen = () => {
     setQty(clamp(n, 1, Math.max(1, max)));
   };
 
-  const producto_nombre = [
-    product?.tipo?.nombre,
-    product?.marca?.nombre,
-    product?.categoria?.nombre,
-  ].filter(Boolean).join(" ");
+  const producto_nombre = [product?.tipo?.nombre, product?.marca?.nombre, product?.categoria?.nombre]
+    .filter(Boolean)
+    .join(" ");
 
   const handleAddToSale = () => {
     if (!activeSaleId) {
@@ -152,10 +166,7 @@ const ProductDetailScreen = () => {
       return;
     }
     if (qty > availableStock) {
-      Alert.alert(
-        "Stock insuficiente",
-        `Disponible: ${availableStock}. Ajusta la cantidad.`
-      );
+      Alert.alert("Stock insuficiente", `Disponible: ${availableStock}. Ajusta la cantidad.`);
       return;
     }
 
@@ -163,20 +174,14 @@ const ProductDetailScreen = () => {
     const color_label = selectedColor ?? "";
 
     const existingIndex = (activeDraft?.productos || []).findIndex(
-      (p: VentaProducto) =>
-        p.producto_id === product.id &&
-        p.talla_id === talla_id &&
-        p.color_id === color_id
+      (p: VentaProducto) => p.producto_id === Number(product.id) && p.talla_id === talla_id && p.color_id === color_id
     );
 
     if (existingIndex >= 0 && activeDraft) {
       const currentQty = activeDraft.productos[existingIndex].cantidad;
       const nextQty = currentQty + qty;
       if (nextQty > (availableStock ?? 0)) {
-        Alert.alert(
-          "Stock insuficiente",
-          `Ya tienes ${currentQty}. Máximo: ${availableStock}.`
-        );
+        Alert.alert("Stock insuficiente", `Ya tienes ${currentQty}. Máximo: ${availableStock}.`);
         return;
       }
       dispatch(
@@ -195,7 +200,7 @@ const ProductDetailScreen = () => {
         addProducto({
           id: activeSaleId,
           producto: {
-            producto_id: product.id,
+            producto_id: Number(product.id),
             talla_id,
             color_id,
             cantidad: qty,
@@ -225,12 +230,11 @@ const ProductDetailScreen = () => {
     }
     setJustCreated(true);
     dispatch(startNewOrder());
-    Alert.alert(
-      "Nueva venta creada",
-      "Redirigiendo a la nueva venta...",
-      [{ text: "OK", onPress: () => router.push(`/(sales)/${activeSaleId || ''}`) }]
-    );
+    Alert.alert("Nueva venta creada", "Redirigiendo a la nueva venta...", [
+      { text: "OK", onPress: () => router.push(`/(sales)/${activeSaleId || ""}`) },
+    ]);
   };
+
   useEffect(() => {
     if (justCreated && activeSaleId && product && variant && talla_id && color_id) {
       const cantidad = Math.min(qty, availableStock || 0);
@@ -238,7 +242,7 @@ const ProductDetailScreen = () => {
         addProducto({
           id: activeSaleId,
           producto: {
-            producto_id: product.id,
+            producto_id: Number(product.id),
             talla_id,
             color_id,
             cantidad,
@@ -273,13 +277,8 @@ const ProductDetailScreen = () => {
           <TouchableOpacity style={styles.errorButton} onPress={handleRetry}>
             <Text style={styles.errorButtonText}>Reintentar</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.errorButtonSecondary}
-            onPress={handleGoBack}
-          >
-            <Text style={styles.errorButtonTextSecondary}>
-              Volver al escáner
-            </Text>
+          <TouchableOpacity style={styles.errorButtonSecondary} onPress={handleGoBack}>
+            <Text style={styles.errorButtonTextSecondary}>Volver al escáner</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -294,16 +293,9 @@ const ProductDetailScreen = () => {
             <Text style={styles.errorIcon}>🔍</Text>
           </View>
           <Text style={styles.errorTitle}>Producto no encontrado</Text>
-          <Text style={styles.errorMessage}>
-            No pudimos encontrar información para este código QR
-          </Text>
-          <TouchableOpacity
-            style={styles.errorButtonSecondary}
-            onPress={handleGoBack}
-          >
-            <Text style={styles.errorButtonTextSecondary}>
-              Volver al escáner
-            </Text>
+          <Text style={styles.errorMessage}>No pudimos encontrar información para este código QR</Text>
+          <TouchableOpacity style={styles.errorButtonSecondary} onPress={handleGoBack}>
+            <Text style={styles.errorButtonTextSecondary}>Volver al escáner</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -311,27 +303,21 @@ const ProductDetailScreen = () => {
   }
 
   const availableSizes: string[] = product.tallasColoresStock
-    .filter(
-      (v: any) => !selectedColor || v?.coloresStock?.color === selectedColor
-    )
-    .map((v: any) => v?.talla?.talla)
-    .filter((x: string, i: number, arr: string[]) => arr.indexOf(x) === i);
+    .filter((v) => !selectedColor || v?.coloresStock?.color === selectedColor)
+    .map((v) => v?.talla?.talla as string)
+    .filter((x, i, arr) => arr.indexOf(x) === i);
 
   const availableColors: string[] = product.tallasColoresStock
-    .filter((v: any) => !selectedSize || v?.talla?.talla === selectedSize)
-    .map((v: any) => v?.coloresStock?.color)
-    .filter((x: string, i: number, arr: string[]) => arr.indexOf(x) === i);
+    .filter((v) => !selectedSize || v?.talla?.talla === selectedSize)
+    .map((v) => v?.coloresStock?.color as string)
+    .filter((x, i, arr) => arr.indexOf(x) === i);
 
-  // Apertura con autoselección segura
   const openSizePicker = () => {
     if (!selectedSize && availableSizes.length) {
       const next = availableSizes[0];
       setSelectedSize(next);
-      const v = product.tallasColoresStock.find(
-        (x: any) =>
-          x?.talla?.talla === next && x?.coloresStock?.color === selectedColor
-      );
-      setAvailableStock(v ? v.stock : null);
+      const v = findVariant(product, next, selectedColor);
+      setAvailableStock(v ? v.stock ?? null : null);
       ensureValidQty(qty);
     }
     setShowSizePicker(true);
@@ -341,11 +327,8 @@ const ProductDetailScreen = () => {
     if (!selectedColor && availableColors.length) {
       const next = availableColors[0];
       setSelectedColor(next);
-      const v = product.tallasColoresStock.find(
-        (x: any) =>
-          x?.talla?.talla === selectedSize && x?.coloresStock?.color === next
-      );
-      setAvailableStock(v ? v.stock : null);
+      const v = findVariant(product, selectedSize, next);
+      setAvailableStock(v ? v.stock ?? null : null);
       ensureValidQty(qty);
     }
     setShowColorPicker(true);
@@ -353,17 +336,11 @@ const ProductDetailScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {product.tallasColoresStock[0]?.coloresStock?.imagenes?.[0]?.url && (
           <View style={styles.imageContainer}>
             <Image
-              source={{
-                uri: product.tallasColoresStock[0].coloresStock.imagenes[0].url,
-              }}
+              source={{ uri: product.tallasColoresStock[0].coloresStock.imagenes![0].url }}
               style={styles.productImage}
               resizeMode="contain"
             />
@@ -372,30 +349,23 @@ const ProductDetailScreen = () => {
 
         <View style={styles.infoSection}>
           <Text style={styles.productDescription}>
-            {product.tipo?.nombre} {product.marca?.nombre}{" "}
-            {product.categoria?.nombre}
+            {product.tipo?.nombre} {product.marca?.nombre} {product.categoria?.nombre}
           </Text>
-          <Text style={styles.productPrice}>
-            ${parseFloat(product.precio).toFixed(2)}
-          </Text>
+          <Text style={styles.productPrice}>${parseFloat(String(product.precio)).toFixed(2)}</Text>
         </View>
 
         <View style={styles.selectorsSection}>
           <View style={styles.selectorWrapper}>
             <Text style={styles.selectorLabel}>Talla</Text>
             <TouchableOpacity style={styles.field} onPress={openSizePicker}>
-              <Text style={styles.fieldText}>
-                {selectedSize ?? "Selecciona una talla"}
-              </Text>
+              <Text style={styles.fieldText}>{selectedSize ?? "Selecciona una talla"}</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.selectorWrapper}>
             <Text style={styles.selectorLabel}>Color</Text>
             <TouchableOpacity style={styles.field} onPress={openColorPicker}>
-              <Text style={styles.fieldText}>
-                {selectedColor ?? "Selecciona un color"}
-              </Text>
+              <Text style={styles.fieldText}>{selectedColor ?? "Selecciona un color"}</Text>
             </TouchableOpacity>
           </View>
 
@@ -403,10 +373,7 @@ const ProductDetailScreen = () => {
             <Text style={styles.selectorLabel}>Cantidad</Text>
             <View style={styles.quantityControls}>
               <TouchableOpacity
-                style={[
-                  styles.quantityButton,
-                  qty <= 1 && styles.quantityButtonDisabled,
-                ]}
+                style={[styles.quantityButton, qty <= 1 && styles.quantityButtonDisabled]}
                 onPress={() => ensureValidQty(qty - 1)}
                 disabled={qty <= 1}
               >
@@ -414,12 +381,7 @@ const ProductDetailScreen = () => {
               </TouchableOpacity>
               <Text style={styles.quantityText}>{qty}</Text>
               <TouchableOpacity
-                style={[
-                  styles.quantityButton,
-                  availableStock && qty >= availableStock
-                    ? styles.quantityButtonDisabled
-                    : undefined,
-                ]}
+                style={[styles.quantityButton, availableStock && qty >= availableStock ? styles.quantityButtonDisabled : undefined]}
                 onPress={() => ensureValidQty(qty + 1)}
                 disabled={!availableStock || qty >= (availableStock ?? 0)}
               >
@@ -431,8 +393,7 @@ const ProductDetailScreen = () => {
           {availableStock !== null && (
             <View style={styles.stockContainer}>
               <Text style={styles.stockText}>
-                Stock disponible:{" "}
-                <Text style={styles.stockNumber}>{availableStock}</Text>
+                Stock disponible: <Text style={styles.stockNumber}>{availableStock}</Text>
               </Text>
             </View>
           )}
@@ -442,50 +403,25 @@ const ProductDetailScreen = () => {
           <TouchableOpacity
             style={[
               styles.primaryButton,
-              !(
-                selectedSize &&
-                selectedColor &&
-                availableStock &&
-                availableStock > 0
-              ) && styles.disabledButton,
+              !(selectedSize && selectedColor && availableStock && availableStock > 0) && styles.disabledButton,
             ]}
             onPress={handleAddToSale}
-            disabled={
-              !(
-                selectedSize &&
-                selectedColor &&
-                availableStock &&
-                availableStock > 0
-              )
-            }
+            disabled={!(selectedSize && selectedColor && availableStock && availableStock > 0)}
           >
-            <Text style={styles.primaryButtonText}>
-              Agregar a la venta actual
-            </Text>
+            <Text style={styles.primaryButtonText}>Agregar a la venta actual</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
               styles.secondaryButton,
-              !(
-                selectedSize &&
-                selectedColor &&
-                availableStock &&
-                availableStock > 0
-              ) && styles.disabledButton,
+              !(selectedSize && selectedColor && availableStock && availableStock > 0) && styles.disabledButton,
             ]}
             onPress={handleCreateNewSale}
-            disabled={
-              !(
-                selectedSize &&
-                selectedColor &&
-                availableStock &&
-                availableStock > 0
-              )
-            }
+            disabled={!(selectedSize && selectedColor && availableStock && availableStock > 0)}
           >
             <Text style={styles.secondaryButtonText}>Crear nueva venta</Text>
           </TouchableOpacity>
+
           <TouchableOpacity
             style={[
               styles.secondaryButton,
@@ -494,7 +430,7 @@ const ProductDetailScreen = () => {
             onPress={() => {
               if (!(selectedSize && selectedColor && availableStock && availableStock > 0)) return;
               const productToAdd = {
-                producto_id: product.id,
+                producto_id: Number(product.id),
                 talla_id,
                 color_id,
                 cantidad: qty,
@@ -503,15 +439,13 @@ const ProductDetailScreen = () => {
                 color_label: selectedColor ?? "",
                 producto_nombre,
               };
-              router.push({
-                pathname: "/(tabs)/(sales)",
-                params: { addProduct: JSON.stringify(productToAdd) },
-              });
+              router.push({ pathname: "/(tabs)/(sales)", params: { addProduct: JSON.stringify(productToAdd) } });
             }}
             disabled={!(selectedSize && selectedColor && availableStock && availableStock > 0)}
           >
             <Text style={styles.secondaryButtonText}>Elegir venta</Text>
           </TouchableOpacity>
+
           <TouchableOpacity style={styles.outlineButton} onPress={handleGoBack}>
             <Text style={styles.outlineButtonText}>Volver al escáner</Text>
           </TouchableOpacity>
@@ -519,42 +453,30 @@ const ProductDetailScreen = () => {
       </ScrollView>
 
       {/* Modal Talla */}
-      <Modal
-        visible={showSizePicker}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowSizePicker(false)}
-      >
+      <Modal visible={showSizePicker} transparent animationType="slide" onRequestClose={() => setShowSizePicker(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>Selecciona talla</Text>
             <Picker
               selectedValue={selectedSize}
-              onValueChange={(val) => {
+              onValueChange={(val: string | null) => {
                 setSelectedSize(val);
-                const v = product.tallasColoresStock.find(
-                  (x: any) =>
-                    x?.talla?.talla === val &&
-                    x?.coloresStock?.color === selectedColor
-                );
-                setAvailableStock(v ? v.stock : null);
+                const v = findVariant(product, val, selectedColor);
+                setAvailableStock(v ? v.stock ?? null : null);
                 ensureValidQty(qty);
               }}
               style={[styles.modalPicker, { color: "#0f172a" }]}
               mode={Platform.OS === "android" ? "dialog" : undefined}
               dropdownIconColor="#0f172a"
-              dropdownIconRippleColor="#0f172a" // Opcional para Android
+              dropdownIconRippleColor="#0f172a"
               itemStyle={styles.pickerItemIOS as any}
             >
               <Picker.Item label="Selecciona una talla" value={null} />
-              {availableSizes.map((s: string) => (
+              {availableSizes.map((s) => (
                 <Picker.Item key={s} label={s} value={s} />
               ))}
             </Picker>
-            <TouchableOpacity
-              style={styles.modalClose}
-              onPress={() => setShowSizePicker(false)}
-            >
+            <TouchableOpacity style={styles.modalClose} onPress={() => setShowSizePicker(false)}>
               <Text style={styles.modalCloseText}>Listo</Text>
             </TouchableOpacity>
           </View>
@@ -562,25 +484,16 @@ const ProductDetailScreen = () => {
       </Modal>
 
       {/* Modal Color */}
-      <Modal
-        visible={showColorPicker}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowColorPicker(false)}
-      >
+      <Modal visible={showColorPicker} transparent animationType="slide" onRequestClose={() => setShowColorPicker(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>Selecciona color</Text>
             <Picker
               selectedValue={selectedColor}
-              onValueChange={(val) => {
+              onValueChange={(val: string | null) => {
                 setSelectedColor(val);
-                const v = product.tallasColoresStock.find(
-                  (x: any) =>
-                    x?.talla?.talla === selectedSize &&
-                    x?.coloresStock?.color === val
-                );
-                setAvailableStock(v ? v.stock : null);
+                const v = findVariant(product, selectedSize, val);
+                setAvailableStock(v ? v.stock ?? null : null);
                 ensureValidQty(qty);
               }}
               style={[styles.modalPicker, { color: "#0f172a" }]}
@@ -589,14 +502,11 @@ const ProductDetailScreen = () => {
               itemStyle={styles.pickerItemIOS as any}
             >
               <Picker.Item label="Selecciona un color" value={null} />
-              {availableColors.map((c: string) => (
+              {availableColors.map((c) => (
                 <Picker.Item key={c} label={c} value={c} />
               ))}
             </Picker>
-            <TouchableOpacity
-              style={styles.modalClose}
-              onPress={() => setShowColorPicker(false)}
-            >
+            <TouchableOpacity style={styles.modalClose} onPress={() => setShowColorPicker(false)}>
               <Text style={styles.modalCloseText}>Listo</Text>
             </TouchableOpacity>
           </View>
