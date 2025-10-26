@@ -16,7 +16,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - uses: expo/expo-github-action@v12
+      - uses: expo/expo-github-action@v11
         with:
           expo-version: latest
           eas-version: latest
