@@ -9,6 +9,9 @@ jobs:
     strategy:
       matrix:
         node-version: [22, 23]
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}   # <- inyecta el secreto a env
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,10 +19,16 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - uses: expo/expo-github-action@v8
+      - run: npm run typecheck
+      - run: npm run lint
+
+      - name: Setup Expo/EAS
+        if: ${{ env.EXPO_TOKEN != '' }}       # <- usa env en la condición
+        uses: expo/expo-github-action@v8
         with:
           expo-version: latest
           eas-version: latest
+<<<<<<< HEAD
           token: ${{ secrets.EXPO_TOKEN }}
       - run: npm run typecheck
       - run: npm run lint
@@ -37,3 +46,16 @@ jobs:
           name: jest-junit-prod-${{ matrix.node-version }}
           path: reports/jest-junit.xml
       - run: npm run eas:update:prod
+=======
+          token: ${{ env.EXPO_TOKEN }}
+
+      - name: Publish OTA production
+        if: ${{ env.EXPO_TOKEN != '' }}       # <- idem
+        run: npm run eas:update:prod
+        env:
+          EXPO_TOKEN: ${{ env.EXPO_TOKEN }}
+
+      - name: OTA deshabilitado
+        if: ${{ env.EXPO_TOKEN == '' }}       # <- rama negativa
+        run: echo "OTA deshabilitado:falta EXPO_TOKEN/permisos"
+>>>>>>> 41edd8822882e837cf76a2e59f9c0708dbd9bb8c
