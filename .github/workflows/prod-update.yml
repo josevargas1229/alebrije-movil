@@ -36,7 +36,14 @@ jobs:
         with:
           name: jest-junit-prod-${{ matrix.node-version }}
           path: reports/jest-junit.xml
-      - run: npm run eas:update:prod
+
+      # --- EAS Update: continúa sin error si no hay EXPO_TOKEN ---
+      - name: EAS Update (Production)
+        run: |
+          if [ -z "${EXPO_TOKEN}" ]; then
+            echo "⚠️  No EXPO_TOKEN found, skipping EAS update step."
+            exit 0
+          fi
+          npm run eas:update:prod
         env:
-            EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-              
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
