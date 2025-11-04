@@ -33,7 +33,7 @@ export const authService = {
     });
     const token = res.data?.csrfToken;
 if (token) {
-  axiosClient.defaults.headers.common["X-CSRF-Token"] = token; // header global
+  axiosClient.defaults.headers.common["X-CSRF-Token"] = token;
   await AsyncStorage.setItem("csrf_token", token).catch(() => {});
 }
     return res.data?.csrfToken;
@@ -70,7 +70,7 @@ const headerToken = headerAuth?.startsWith("Bearer ")
 const token =
   data?.token || data?.accessToken || data?.jwt || headerToken || null;
   if (token) {
-  setAuthHeader(token);                 // header global en axiosClient
+  setAuthHeader(token);            
   try { await AsyncStorage.setItem("auth_token", token); } catch {}
 }
     return {
@@ -106,7 +106,6 @@ const headerToken = headerAuth?.startsWith("Bearer ")
 const token =
   data?.token || data?.accessToken || data?.jwt || headerToken || null;
   if (!token) {
-  // deja traza clara para depurar
   console.warn("Login OK pero sin token. Respuesta:", JSON.stringify(data));
   throw new Error("El backend no devolvió token de sesión.");
 }

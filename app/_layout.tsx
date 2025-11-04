@@ -19,7 +19,7 @@ export default function RootLayout() {
     })();
   }, []);
 
-  if (!ready) return null; // <- no renderiza nada hasta setear Authorization
+  if (!ready) return null;
 
   return (
     <Provider store={store}>

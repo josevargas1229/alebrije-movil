@@ -12,9 +12,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 type MetodoPago = "efectivo" | "tarjeta" | "transferencia";
 type TarjetaData = {
   nombre: string;
-  numero: string;       // solo UI
-  vencimiento: string;  // MM/AA
-  cvv: string;          // solo UI
+  numero: string;       
+  vencimiento: string; 
+  cvv: string;    
 };
 
 type TransferenciaData = {
@@ -54,7 +54,7 @@ export default function CheckoutScreen() {
     );
   }
   
-  // Validación solo visual para efectivo
+
   const efectivoValido = metodo !== "efectivo" || recibidoNumber >= total;
   const tarjetaValida =
     metodo !== "tarjeta" ||
@@ -81,13 +81,12 @@ const puedeConfirmar = sale.productos.length > 0 && total > 0 && metodoOk;
       return;
     }
 
-    // Asegura usuario autenticado
     if (!authUserId) {
       Alert.alert("Sesión requerida", "Inicia sesión para registrar la venta.");
       return;
     }
 
-    // Asegura Authorization en este hilo
+
     let auth = (axiosClient.defaults.headers.common.Authorization as string) || "";
     if (!auth) {
       const t = await AsyncStorage.getItem("auth_token");
@@ -95,7 +94,7 @@ const puedeConfirmar = sale.productos.length > 0 && total > 0 && metodoOk;
     }
 
     const payload = {
-      usuario_id: authUserId,   // <- usa el del JWT
+      usuario_id: authUserId, 
       total: +total.toFixed(2),
       productos: sale.productos.map((p: VentaProducto) => ({
         producto_id: Number(p.producto_id),
@@ -109,6 +108,12 @@ const puedeConfirmar = sale.productos.length > 0 && total > 0 && metodoOk;
     };
 
     await createVenta(payload);
+
+    const resp = await createVenta(payload); // asegúrate que devuelve { venta: { id } }
+const ventaId = resp?.venta?.id;
+if (ventaId) {
+  await AsyncStorage.setItem(`ventaMetodo:${ventaId}`, metodo);
+}
 
     dispatch(setStatus({ id: sale.id, status: "finalizada" }));
     dispatch(clearDraft(sale.id));

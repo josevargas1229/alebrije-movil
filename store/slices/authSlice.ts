@@ -76,7 +76,6 @@ export const logoutThunk = createAsyncThunk(
       await authService.logout();
       return null;
     } catch (err: any) {
-      // Aún si falla el logout en el servidor, limpiamos el estado local
       console.warn("Logout API failed, but clearing local state:", err);
       return null;
     }
@@ -115,13 +114,13 @@ state.token = t;
 setAuthHeader(t || undefined);
 if (t) { AsyncStorage.setItem("auth_token", t).catch(() => {}); }
 
-// rehidrata CSRF si existe o pídelo si falta
+
 AsyncStorage.getItem("csrf_token")
   .then(csrf => {
     if (csrf) {
       axiosClient.defaults.headers.common["X-CSRF-Token"] = csrf;
     } else {
-      // pide uno y propágalo
+
       authService.getCsrf().catch(() => {});
     }
   })
@@ -158,13 +157,13 @@ state.token = t;
 setAuthHeader(t || undefined);
 if (t) { AsyncStorage.setItem("auth_token", t).catch(() => {}); }
 
-// rehidrata CSRF si existe o pídelo si falta
+
 AsyncStorage.getItem("csrf_token")
   .then(csrf => {
     if (csrf) {
       axiosClient.defaults.headers.common["X-CSRF-Token"] = csrf;
     } else {
-      // pide uno y propágalo
+
       authService.getCsrf().catch(() => {});
     }
   })
