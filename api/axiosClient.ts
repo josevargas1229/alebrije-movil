@@ -1,12 +1,9 @@
-// @/api/axiosClient.ts
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-// 1) Normaliza: quita /api si viene en la env
 const RAW = process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000/api";
-const ROOT = RAW.replace(/\/api\/?$/i, "").replace(/\/+$/,""); // <- SIN /api
+const ROOT = RAW.replace(/\/api\/?$/i, "").replace(/\/+$/,"");
 const axiosClient = axios.create({
-  baseURL: ROOT,                    // <- base en raíz, no /api
+  baseURL: ROOT, 
   withCredentials: true,
   headers: { "Content-Type": "application/json" },
 });
@@ -27,12 +24,10 @@ axiosClient.interceptors.request.use((config) => {
   (config.headers as any)["X-Client-Platform"] = "mobile";
   const url = (config.url || "").toLowerCase();
 
-  // No envíes Authorization a login/logout
   if (url.includes("/auth/login") || url.includes("/auth/logout")) {
     if (config.headers) delete (config.headers as any).Authorization;
   }
 
-  // Traza útil para /ventas
   if (url.includes("/ventas")) {
     const auth = (config.headers as any)?.Authorization || axiosClient.defaults.headers.common.Authorization;
     console.log("Authorization en /ventas =>", auth);
