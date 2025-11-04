@@ -15,6 +15,18 @@ export const DRAFT_STATUS_LABELS: Record<DraftStatus, string> = {
   cancelada: "Cancelada",
 };
 
+export type PaymentMethod = "efectivo" | "tarjeta" | "transferencia";
+export interface CheckoutState {
+  loading: boolean;
+  error: string | null;
+  lastTxn?: {
+    ventaId?: number | string;
+    provider?: "paypal" | "mercado_pago" | "manual";
+    raw?: unknown;
+  };
+}
+
+
 export interface DraftSale {
   id: string;
   orderNumber: string;
@@ -30,6 +42,7 @@ export interface DraftSale {
 interface SalesState {
   drafts: { [id: string]: DraftSale };
   activeSaleId: string | null;
+  checkout: CheckoutState;
 }
 
 const MAX_SALES = 3;
@@ -54,6 +67,10 @@ const recalcTotal = (productos: VentaProducto[]) =>
 const initialState: SalesState = {
   drafts: {},
   activeSaleId: null,
+  checkout: {
+    loading: false,
+    error: null,
+  },
 };
 
 const salesSlice = createSlice({
@@ -154,6 +171,7 @@ const salesSlice = createSlice({
       state.activeSaleId = null;
     },
   },
+  extraReducers: () => {},
 });
 
 export const {

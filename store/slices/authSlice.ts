@@ -1,5 +1,8 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { authService, LoginCredentials } from "@/api/authService";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axiosClient from "@/api/axiosClient";
+import { setAuthHeader } from "@/api/axiosClient";
 
 interface User {
   nombreUsuario?: string;
@@ -14,7 +17,9 @@ interface AuthState {
   error: string | null;
   hasCheckedAuth: boolean;
   isInitialized: boolean;
+  token: string | null;
 }
+
 
 const initialState: AuthState = {
   user: null,
@@ -22,7 +27,10 @@ const initialState: AuthState = {
   error: null,
   hasCheckedAuth: false,
   isInitialized: false,
+  token: null,
 };
+
+
 
 export const login = createAsyncThunk(
   "auth/login",
@@ -31,6 +39,7 @@ export const login = createAsyncThunk(
       const response = await authService.login(credentials);
       return {
         user: response.user,
+        token: response.token ?? null,
       };
     } catch (err: any) {
       const msg =
@@ -51,6 +60,7 @@ export const checkAuth = createAsyncThunk(
       const response = await authService.checkAuth();
       return {
         user: response.user,
+         token: (response as any).token ?? null,
       };
     } catch (err: any) {
       console.log("CheckAuth failed:", err.message || err);
@@ -83,6 +93,9 @@ const authSlice = createSlice({
     logout: (state) => {
       state.user = null;
       state.error = null;
+      state.token = null;
+setAuthHeader(undefined);
+AsyncStorage.removeItem("auth_token").catch(() => {});
     },
   },
   extraReducers: (builder) => {
@@ -96,6 +109,24 @@ const authSlice = createSlice({
         state.loading = false;
         state.user = action.payload.user;
         state.error = null;
+        // tras setear el JWT:
+const t = action.payload.token ?? null;
+state.token = t;
+setAuthHeader(t || undefined);
+if (t) { AsyncStorage.setItem("auth_token", t).catch(() => {}); }
+
+// rehidrata CSRF si existe o pídelo si falta
+AsyncStorage.getItem("csrf_token")
+  .then(csrf => {
+    if (csrf) {
+      axiosClient.defaults.headers.common["X-CSRF-Token"] = csrf;
+    } else {
+      // pide uno y propágalo
+      authService.getCsrf().catch(() => {});
+    }
+  })
+  .catch(() => {});
+
         if (!state.hasCheckedAuth) {
           state.hasCheckedAuth = true;
           state.isInitialized = true;
@@ -121,6 +152,23 @@ const authSlice = createSlice({
         state.hasCheckedAuth = true;
         state.isInitialized = true;
         state.error = null;
+     // tras setear el JWT:
+const t = action.payload.token ?? null;
+state.token = t;
+setAuthHeader(t || undefined);
+if (t) { AsyncStorage.setItem("auth_token", t).catch(() => {}); }
+
+// rehidrata CSRF si existe o pídelo si falta
+AsyncStorage.getItem("csrf_token")
+  .then(csrf => {
+    if (csrf) {
+      axiosClient.defaults.headers.common["X-CSRF-Token"] = csrf;
+    } else {
+      // pide uno y propágalo
+      authService.getCsrf().catch(() => {});
+    }
+  })
+  .catch(() => {});
       })
       .addCase(checkAuth.rejected, (state) => {
         console.log("checkAuth rejected, setting state to initialized");
