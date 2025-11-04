@@ -1,55 +1,58 @@
 name: Release Build
+
 on:
   push:
-    tags: [ 'v*' ]
+    tags: ['v*']
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
     strategy:
       fail-fast: false
       matrix:
         node-version: [22, 23]
-        platform: [ android, ios ]
-    runs-on: ubuntu-latest
-    env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}   # token disponible en todo el job
+        platform: [android, ios]
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ matrix['node-version'] }}
           cache: npm
-      - run: npm ci
 
-      - uses: expo/expo-github-action@v8
+      # Java 17 requerido por Android toolchain
+      - uses: actions/setup-java@v4
         with:
-          expo-version: latest
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          distribution: temurin
+          java-version: '17'
+
+      - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      # --- Ejecuta tests con cobertura
       - run: npm run test:ci
-      # --- Sube artifacts de cobertura y reporte JUnit
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: coverage-release-${{ matrix.platform }}-${{ matrix.node-version }}
+          name: coverage-release-${{ matrix.platform }}-${{ matrix['node-version'] }}
           path: coverage
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jest-junit-release-${{ matrix.platform }}-${{ matrix.node-version }}
+          name: jest-junit-release-${{ matrix.platform }}-${{ matrix['node-version'] }}
           path: reports/jest-junit.xml
 
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm test
-
-      # Solo si existe EXPO_TOKEN
       - name: Setup Expo/EAS
-        if: ${{ env.EXPO_TOKEN != '' }}
+        if: ${{ env.EXPO_TOKEN != '' && matrix['node-version'] == '22' }}
         uses: expo/expo-github-action@v8
         with:
           expo-version: latest
@@ -57,14 +60,11 @@ jobs:
           token: ${{ env.EXPO_TOKEN }}
 
       - name: EAS Build
-        if: ${{ env.EXPO_TOKEN != '' }}
+        if: ${{ env.EXPO_TOKEN != '' && matrix['node-version'] == '22' }}
         run: |
           if [ "${{ matrix.platform }}" = "android" ]; then npm run eas:build:android; fi
           if [ "${{ matrix.platform }}" = "ios" ]; then npm run eas:build:ios; fi
-        env:
-          EXPO_TOKEN: ${{ env.EXPO_TOKEN }}
 
-      # Aviso si no hay token
       - name: Build deshabilitado
-        if: ${{ env.EXPO_TOKEN == '' }}
+        if: ${{ env.EXPO_TOKEN == '' && matrix['node-version'] == '22' }}
         run: echo "Build EAS deshabilitado:falta EXPO_TOKEN/permisos"

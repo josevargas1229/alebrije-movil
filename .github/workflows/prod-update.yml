@@ -1,49 +1,60 @@
 name: EAS Update Production
+
 on:
   push:
     branches: [ main ]
 
+concurrency:
+  group: prod-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   update:
     runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
     strategy:
       matrix:
         node-version: [22, 23]
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ matrix['node-version'] }}
           cache: npm
+
       - run: npm ci
-      - uses: expo/expo-github-action@v8
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:ci
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-prod-${{ matrix['node-version'] }}
+          path: coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jest-junit-prod-${{ matrix['node-version'] }}
+          path: reports/jest-junit.xml
+
+      - name: Setup Expo/EAS
+        if: ${{ env.EXPO_TOKEN != '' && matrix['node-version'] == '22' }}
+        uses: expo/expo-github-action@v8
         with:
           expo-version: latest
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-      - run: npm run typecheck
-      - run: npm run lint
-      # --- Ejecuta tests con Jest antes de desplegar
-      - run: npm run test:ci
-      # --- Sube cobertura y reporte JUnit
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-prod-${{ matrix.node-version }}
-          path: coverage
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: jest-junit-prod-${{ matrix.node-version }}
-          path: reports/jest-junit.xml
+          token: ${{ env.EXPO_TOKEN }}
 
-      # --- EAS Update: continúa sin error si no hay EXPO_TOKEN ---
       - name: EAS Update (Production)
-        run: |
-          if [ -z "${EXPO_TOKEN}" ]; then
-            echo "⚠️  No EXPO_TOKEN found, skipping EAS update step."
-            exit 0
-          fi
-          npm run eas:update:prod
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        if: ${{ env.EXPO_TOKEN != '' && matrix['node-version'] == '22' }}
+        run: npm run eas:update:prod
+
+      - name: EAS Update omitido
+        if: ${{ env.EXPO_TOKEN == '' && matrix['node-version'] == '22' }}
+        run: echo "⚠️ No EXPO_TOKEN; se omite update de producción."

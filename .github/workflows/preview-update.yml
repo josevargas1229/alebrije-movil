@@ -1,52 +1,51 @@
 name: EAS Update Preview
+
 on:
   push:
     branches: [ develop ]
 
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   update:
     runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
     strategy:
       matrix:
         node-version: [22, 23]
-    env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}   # define variable de entorno
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ matrix['node-version'] }}
           cache: npm
+
       - run: npm ci
-
-      - uses: expo/expo-github-action@v8
-        with:
-          expo-version: latest
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
       - run: npm run typecheck
       - run: npm run lint
-      # --- Ejecuta tests con cobertura
       - run: npm run test:ci
-      # --- Sube artifacts para ver cobertura y reporte JUnit
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: coverage-preview-${{ matrix.node-version }}
+          name: coverage-preview-${{ matrix['node-version'] }}
           path: coverage
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jest-junit-preview-${{ matrix.node-version }}
+          name: jest-junit-preview-${{ matrix['node-version'] }}
           path: reports/jest-junit.xml
-      - run: npm run eas:update:preview
 
-      - run: npm run typecheck
-      - run: npm run lint
-
+      # Login EAS una sola vez por job. Publica OTA solo en Node 22.
       - name: Setup Expo/EAS
-        if: ${{ env.EXPO_TOKEN != '' }}
+        if: ${{ env.EXPO_TOKEN != '' && matrix['node-version'] == '22' }}
         uses: expo/expo-github-action@v8
         with:
           expo-version: latest
@@ -54,12 +53,9 @@ jobs:
           token: ${{ env.EXPO_TOKEN }}
 
       - name: Publish OTA preview
-        if: ${{ env.EXPO_TOKEN != '' }}
+        if: ${{ env.EXPO_TOKEN != '' && matrix['node-version'] == '22' }}
         run: npm run eas:update:preview
-        env:
-          EXPO_TOKEN: ${{ env.EXPO_TOKEN }}
 
       - name: OTA deshabilitado
-        if: ${{ env.EXPO_TOKEN == '' }}
-        run: echo "OTA deshabilitado:falta EXPO_TOKEN/permisos"
-
+        if: ${{ env.EXPO_TOKEN == '' && matrix['node-version'] == '22' }}
+        run: echo "OTA deshabilitado:falta EXPO_TOKEN / permisos"
