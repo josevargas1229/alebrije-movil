@@ -440,14 +440,12 @@ export default function NewSaleScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.btnPrimary, hasErrors && styles.btnDisabled]}
-          onPress={handleSave}
-          disabled={hasErrors}
-        >
-          <Text style={styles.btnPrimaryText}>
-            Proceder a la venta →
-          </Text>
-        </TouchableOpacity>
+  style={[styles.btnPrimary, hasErrors && styles.btnDisabled]}
+  onPress={() => router.push(`/(tabs)/(sales)/checkout/${id}`)}
+  disabled={hasErrors}
+>
+  <Text style={styles.btnPrimaryText}>Proceder al pago →</Text>
+</TouchableOpacity>
       </View>
     </View>
   );

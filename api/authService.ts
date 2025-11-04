@@ -1,5 +1,7 @@
 import axiosClient from "./axiosClient";
 import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { setAuthHeader } from "./axiosClient";
 
 export interface LoginCredentials {
   email: string;
@@ -16,6 +18,7 @@ export interface User {
 export interface LoginResponse {
   user: User | null;
   message?: string;
+  token?: string;
 }
 
 export const authService = {
@@ -28,7 +31,13 @@ export const authService = {
         "X-Client-Platform": "mobile",
       },
     });
+    const token = res.data?.csrfToken;
+if (token) {
+  axiosClient.defaults.headers.common["X-CSRF-Token"] = token; // header global
+  await AsyncStorage.setItem("csrf_token", token).catch(() => {});
+}
     return res.data?.csrfToken;
+    
   },
 
   login: async (credentials: LoginCredentials): Promise<LoginResponse> => {
@@ -54,7 +63,16 @@ export const authService = {
     });
 
     const data = res.data;
-
+    const headerAuth = res.headers?.authorization as string | undefined;
+const headerToken = headerAuth?.startsWith("Bearer ")
+  ? headerAuth.slice(7)
+  : undefined;
+const token =
+  data?.token || data?.accessToken || data?.jwt || headerToken || null;
+  if (token) {
+  setAuthHeader(token);                 // header global en axiosClient
+  try { await AsyncStorage.setItem("auth_token", token); } catch {}
+}
     return {
       user: data.user
         ? {
@@ -72,6 +90,7 @@ export const authService = {
               }
             : null),
       message: data.message,
+      token,
     };
   },
 
@@ -80,7 +99,17 @@ export const authService = {
       withCredentials: true,
     });
     const data = res.data;
-
+    const headerAuth = res.headers?.authorization as string | undefined;
+const headerToken = headerAuth?.startsWith("Bearer ")
+  ? headerAuth.slice(7)
+  : undefined;
+const token =
+  data?.token || data?.accessToken || data?.jwt || headerToken || null;
+  if (!token) {
+  // deja traza clara para depurar
+  console.warn("Login OK pero sin token. Respuesta:", JSON.stringify(data));
+  throw new Error("El backend no devolvió token de sesión.");
+}
     return {
       user: data.user
         ? {
@@ -97,6 +126,7 @@ export const authService = {
                 verified: data.verified,
               }
             : null),
+      token,
     };
   },
 
