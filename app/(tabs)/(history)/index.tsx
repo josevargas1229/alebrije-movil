@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform, ScrollView } from "react-native";
 import { useSelector } from "react-redux";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import type { RootState } from "@/store";
 import { getVentasByUsuario, VentaDetalleResumen, MetodoPago } from "@/src/services/salesApi";
+import { RefreshControl } from "react-native";
 
 type FiltroMetodo = "todos" | MetodoPago;
 const PAGE_SIZE = 20;
@@ -17,9 +19,14 @@ const dt = (v: unknown) => {
   const d = new Date(String(v ?? ""));
   return isNaN(d.getTime()) ? null : d;
 };
-/** Normaliza método de pago desde distintas claves/formatos */
+
 const normalizeMetodo = (v: any): MetodoPago | "desconocido" => {
+  const fromSuccessTx = Array.isArray(v?.transacciones)
+    ? v.transacciones.find((t: any) => String(t?.estado).toLowerCase() === "exitoso")?.metodo_pago
+    : undefined;
+
   const rawSrc =
+    fromSuccessTx ??
     v?.metodo_pago ??
     v?.metodo ??
     v?.payment_method ??
@@ -27,6 +34,7 @@ const normalizeMetodo = (v: any): MetodoPago | "desconocido" => {
     v?.transaccion?.metodo_pago ??
     v?.transacciones?.[0]?.metodo_pago ??
     "";
+
   const raw = String(rawSrc).trim().toLowerCase();
   if (!raw) return "desconocido";
   if (raw.startsWith("efec")) return "efectivo";
@@ -35,21 +43,41 @@ const normalizeMetodo = (v: any): MetodoPago | "desconocido" => {
   return "desconocido";
 };
 
+const normalizeEstado = (v: any) => {
+  const eVenta = String(v?.estado ?? "").toLowerCase();
+  const eTx = String(
+    v?.transaccion?.estado ??
+    v?.transacciones?.[0]?.estado ??
+    ""
+  ).toLowerCase();
+
+  const ok =
+    eVenta.startsWith("complet") ||
+    ["exitoso","approved","completed","success","pagado","paid"].some(x => eTx.includes(x));
+
+  const pending =
+    eVenta.startsWith("pend") ||
+    ["pend","in_process","pending"].some(x => eTx.includes(x));
+
+  if (ok) return { text: "Exitoso", isOk: true };
+  if (pending) return { text: "Pendiente", isOk: false };
+  return { text: (v?.estado ?? "Pendiente").toString(), isOk: false };
+};
+
+
+
 export default function SalesHistoryScreen() {
   const router = useRouter();
   const usuarioId = useSelector((s: RootState) => s.auth.user?.userId ?? 0);
 
-  const [loading, setLoading] = useState(false); // ← faltaba
+  const [loading, setLoading] = useState(false);
   const [source, setSource] = useState<VentaDetalleResumen[]>([]);
   const [cacheMetodo, setCacheMetodo] = useState<Record<number, MetodoPago | "desconocido">>({});
 
-  // filtros UI
   const [q, setQ] = useState("");
   const [metodo, setMetodo] = useState<FiltroMetodo>("todos");
-  const [desde, setDesde] = useState<string>(""); // YYYY-MM-DD
-  const [hasta, setHasta] = useState<string>(""); // YYYY-MM-DD
-
-  // paginación local
+  const [desde, setDesde] = useState<string>("");
+  const [hasta, setHasta] = useState<string>("");
   const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
@@ -62,11 +90,9 @@ export default function SalesHistoryScreen() {
         const db = dt(b.fecha_venta ?? b.created_at);
         return (db?.getTime() ?? 0) - (da?.getTime() ?? 0);
       });
-      // precalcula y cachea método por id
       const map: Record<number, MetodoPago | "desconocido"> = {};
       for (const v of sorted) map[v.id] = normalizeMetodo(v);
       setCacheMetodo(map);
-
       setSource(sorted);
       setPage(1);
     } finally {
@@ -74,26 +100,26 @@ export default function SalesHistoryScreen() {
     }
   }, [usuarioId]);
 
-  useEffect(() => { load(); }, [load]);
+  useFocusEffect(
+  useCallback(() => {
+    load();            
+  }, [load])
+);
 
-  // aplica filtros
   const filtered = useMemo(() => {
     const d0 = desde ? new Date(`${desde}T00:00:00`) : null;
     const d1 = hasta ? new Date(`${hasta}T23:59:59`) : null;
 
     return source.filter(v => {
-      // método
       if (metodo !== "todos") {
         const m = cacheMetodo[v.id] ?? normalizeMetodo(v);
         if (m !== metodo) return false;
       }
-      // texto
       if (q.trim()) {
         const needle = q.trim().toLowerCase();
         const order = (v.orderNumber ?? v.numeroOrden ?? `${v.id}`).toString().toLowerCase();
         if (!order.includes(needle)) return false;
       }
-      // rango fechas
       const f = dt(v.fecha_venta ?? v.created_at);
       if (f && (d0 || d1)) {
         if (d0 && f < d0) return false;
@@ -103,69 +129,93 @@ export default function SalesHistoryScreen() {
     });
   }, [source, metodo, q, desde, hasta, cacheMetodo]);
 
-  // página actual
   const pageItems = useMemo(() => filtered.slice(0, page * PAGE_SIZE), [filtered, page]);
 
   const onEnd = () => {
     if (page * PAGE_SIZE < filtered.length) setPage(p => p + 1);
   };
 
-  // Corrige la ruta al detalle del historial
   const goDetail = (ventaId: number) => {
     router.push(`/(tabs)/(history)/${ventaId}`);
   };
 
-  const Item = ({ item }: { item: VentaDetalleResumen }) => {
+  // Calcular totales
+  const totalVentas = filtered.length;
+  const totalMonto = filtered.reduce((sum, v) => sum + num(v.total), 0);
+
+  const Item = ({ item, index }: { item: VentaDetalleResumen; index: number }) => {
     const when = dt(item.fecha_venta ?? item.created_at);
     const fechaFmt = when ? when.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : "s/f";
     const horaFmt = when ? when.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : "";
     const m = cacheMetodo[item.id] ?? normalizeMetodo(item);
-    const estado = (item.estado ?? "n/d").toString();
-    const completada = /^complet/i.test(estado) || estado === "Completada";
+    const st = normalizeEstado(item);
+const estado = st.text;
+const completada = st.isOk;
 
-    const metodoPagoIcon = {
-      efectivo: "",
-      tarjeta: "",
-      transferencia: "",
-      desconocido: ""
+
+
+    const metodoPagoConfig = {
+      efectivo: { icon: "", color: "#10B981", bg: "#D1FAE5" },
+      tarjeta: { icon: "", color: "#3B82F6", bg: "#DBEAFE" },
+      transferencia: { icon: "", color: "#8B5CF6", bg: "#EDE9FE" },
+      desconocido: { icon: "", color: "#6B7280", bg: "#F3F4F6" }
     }[m];
 
     return (
       <TouchableOpacity
         style={styles.card}
         onPress={() => goDetail(item.id)}
-        activeOpacity={0.65}
+        activeOpacity={0.7}
       >
-        <View style={[styles.statusIndicator, completada ? styles.statusComplete : styles.statusPending]} />
+        <LinearGradient
+          colors={completada ? ["#10B981", "#059669"] : ["#F59E0B", "#D97706"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.statusIndicator}
+        />
+        
         <View style={styles.cardContent}>
           <View style={styles.cardHeader}>
-            <View style={styles.orderBadge}>
-              <Text style={styles.orderText}> Venta {item.orderNumber ?? `#${item.id}`}</Text>
+            <View style={styles.orderInfo}>
+              <Text style={styles.orderLabel}>Venta</Text>
+              <Text style={styles.orderNumber}>#{item.orderNumber ?? item.id}</Text>
             </View>
-            <View style={[styles.statusChip, completada ? styles.statusChipComplete : styles.statusChipPending]}>
-              <View style={[styles.statusDot, completada ? styles.dotComplete : styles.dotPending]} />
-              <Text style={[styles.statusLabel, completada ? styles.statusLabelComplete : styles.statusLabelPending]}>
+            <View style={[styles.statusBadge, { backgroundColor: completada ? "#D1FAE5" : "#FEF3C7" }]}>
+              <View style={[styles.statusPulse, { backgroundColor: completada ? "#10B981" : "#F59E0B" }]} />
+              <Text style={[styles.statusText, { color: completada ? "#059669" : "#D97706" }]}>
                 {estado}
               </Text>
             </View>
           </View>
 
-          <View style={styles.dateRow}>
-            <Text style={styles.dateText}>{fechaFmt}</Text>
-            <Text style={styles.timeSeparator}>•</Text>
-            <Text style={styles.timeText}>{horaFmt}</Text>
+          <View style={styles.dateTimeRow}>
+            <View style={styles.dateContainer}>
+              <Text style={styles.dateText}>{fechaFmt}</Text>
+            </View>
+            <View style={styles.timeContainer}>
+              <Text style={styles.timeText}>{horaFmt}</Text>
+            </View>
           </View>
 
+          <View style={styles.divider} />
+
           <View style={styles.cardFooter}>
-            <View style={styles.methodContainer}>
-              <Text style={styles.methodIcon}>{metodoPagoIcon}</Text>
-              <Text style={styles.methodText}>{m}</Text>
+            <View style={[styles.methodBadge, { backgroundColor: metodoPagoConfig.bg }]}>
+              <Text style={styles.methodIcon}>{metodoPagoConfig.icon}</Text>
+              <Text style={[styles.methodText, { color: metodoPagoConfig.color }]}>
+                {m.charAt(0).toUpperCase() + m.slice(1)}
+              </Text>
             </View>
-            <View style={styles.totalBox}>
+            
+            <View style={styles.totalContainer}>
               <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.totalAmount}>${money(item.total)}</Text>
             </View>
           </View>
+        </View>
+
+        <View style={styles.arrowIndicator}>
+          <Text style={styles.arrowText}>›</Text>
         </View>
       </TouchableOpacity>
     );
@@ -173,144 +223,193 @@ export default function SalesHistoryScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header mejorado con gradiente visual */}
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <Text style={styles.title}> Historial</Text>
-          <Text style={styles.subtitle}>Gestiona tus ventas</Text>
-        </View>
-      </View>
-
-      <View style={styles.contentWrapper}>
-        {/* Búsqueda moderna */}
-        <View style={styles.searchBox}>
-          <View style={styles.searchIconContainer}>
-          </View>
-          <TextInput
-            placeholder="Buscar orden..."
-            value={q}
-            onChangeText={setQ}
-            style={styles.searchInput}
-            autoCapitalize="characters"
-            placeholderTextColor="#94A3B8"
-          />
-          {q ? (
-            <TouchableOpacity onPress={() => setQ("")} style={styles.clearBtn}>
-              <Text style={styles.clearText}>✕</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        {/* Filtros de método */}
-        <View style={styles.filtersSection}>
-          <Text style={styles.filterTitle}>Método de pago</Text>
-          <View style={styles.chipsContainer}>
-            <FiltroChip label="Todos" active={metodo === "todos"} onPress={() => setMetodo("todos")} />
-            <FiltroChip label="Efectivo" active={metodo === "efectivo"} onPress={() => setMetodo("efectivo")} />
-            <FiltroChip label="Tarjeta" active={metodo === "tarjeta"} onPress={() => setMetodo("tarjeta")} />
-            <FiltroChip label="Transferencia" active={metodo === "transferencia"} onPress={() => setMetodo("transferencia")} />
+      {/* Header Premium con gradiente */}
+      <LinearGradient
+        colors={["#1E293B", "#334155"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.header}
+      >
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.title}> Historial</Text>
+            <Text style={styles.subtitle}>Gestiona tus ventas</Text>
           </View>
         </View>
 
-        {/* Rango de fechas */}
-        <View style={styles.dateSection}>
-          <Text style={styles.filterTitle}>Rango de fechas</Text>
-          <View style={styles.dateRow2}>
-            <View style={styles.dateInputWrapper}>
-              <Text style={styles.dateLabel}>Desde</Text>
-              <TextInput
-                placeholder="YYYY-MM-DD"
-                value={desde}
-                onChangeText={setDesde}
-                style={styles.dateInput}
-                autoCapitalize="none"
-                placeholderTextColor="#94A3B8"
+        {/* Stats Cards */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{totalVentas}</Text>
+            <Text style={styles.statLabel}>Ventas</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>${money(totalMonto)}</Text>
+            <Text style={styles.statLabel}>Total</Text>
+          </View>
+        </View>
+      </LinearGradient>
+
+      {/* Contenedor desplazable con filtros y lista */}
+     <ScrollView
+  style={styles.scrollContainer}
+  showsVerticalScrollIndicator={false}
+  bounces
+  refreshControl={
+    <RefreshControl refreshing={loading} onRefresh={load} />
+  }
+>
+        <View style={styles.contentWrapper}>
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <TextInput
+              placeholder="Buscar por número de orden..."
+              value={q}
+              onChangeText={setQ}
+              style={styles.searchInput}
+              autoCapitalize="characters"
+              placeholderTextColor="#94A3B8"
+            />
+            {q ? (
+              <TouchableOpacity onPress={() => setQ("")} style={styles.clearButton}>
+                <Text style={styles.clearText}>✕</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          {/* Filters Section */}
+          <View style={styles.filtersSection}>
+            <View style={styles.filterHeader}>
+              <Text style={styles.filterTitle}>Método de pago</Text>
+              {metodo !== "todos" && (
+                <TouchableOpacity onPress={() => setMetodo("todos")}>
+                  <Text style={styles.clearFilters}>Limpiar</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <View style={styles.chipsContainer}>
+              <FiltroChip 
+                label="Todos" 
+                icon=""
+                active={metodo === "todos"} 
+                onPress={() => setMetodo("todos")} 
+              />
+              <FiltroChip 
+                label="Efectivo" 
+                icon=""
+                active={metodo === "efectivo"} 
+                onPress={() => setMetodo("efectivo")} 
+              />
+              <FiltroChip 
+                label="Tarjeta" 
+                icon=""
+                active={metodo === "tarjeta"} 
+                onPress={() => setMetodo("tarjeta")} 
+              />
+              <FiltroChip 
+                label="Transfer" 
+                icon=""
+                active={metodo === "transferencia"} 
+                onPress={() => setMetodo("transferencia")} 
               />
             </View>
-            <View style={styles.dateInputWrapper}>
-              <Text style={styles.dateLabel}>Hasta</Text>
-              <TextInput
-                placeholder="YYYY-MM-DD"
-                value={hasta}
-                onChangeText={setHasta}
-                style={styles.dateInput}
-                autoCapitalize="none"
-                placeholderTextColor="#94A3B8"
-              />
+          </View>
+
+          {/* Date Range */}
+          <View style={styles.dateSection}>
+            <Text style={styles.filterTitle}>Rango de fechas</Text>
+            <View style={styles.dateRow}>
+              <View style={styles.dateInputContainer}>
+                <Text style={styles.dateInputLabel}>Desde</Text>
+                <TextInput
+                  placeholder="2024-01-01"
+                  value={desde}
+                  onChangeText={setDesde}
+                  style={styles.dateInput}
+                  autoCapitalize="none"
+                  placeholderTextColor="#94A3B8"
+                />
+              </View>
+              <View style={styles.dateInputContainer}>
+                <Text style={styles.dateInputLabel}>Hasta</Text>
+                <TextInput
+                  placeholder="2024-12-31"
+                  value={hasta}
+                  onChangeText={setHasta}
+                  style={styles.dateInput}
+                  autoCapitalize="none"
+                  placeholderTextColor="#94A3B8"
+                />
+              </View>
             </View>
           </View>
         </View>
-      </View>
-
-      {/* Lista de ventas */}
-      <FlatList
-        data={pageItems}
-        keyExtractor={(it) => String(it.id)}
-        renderItem={Item}
-        contentContainerStyle={styles.listContent}
-        onEndReached={onEnd}
-        onEndReachedThreshold={0.5}
-        refreshing={loading}
-        onRefresh={load}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>
-              {loading ? "Cargando ventas..." : "No hay ventas"}
-            </Text>
-            <Text style={styles.emptySubtitle}>
-              {loading ? "Espera un momento" : "Tus ventas aparecerán aquí"}
-            </Text>
-          </View>
-        }
-      />
+        {/* Lista de ventas */}
+        <View style={styles.listWrapper}>
+          {loading ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>Cargando ventas...</Text>
+              <Text style={styles.emptySubtitle}>Espera un momento</Text>
+            </View>
+          ) : pageItems.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>No hay ventas</Text>
+              <Text style={styles.emptySubtitle}>Tus ventas aparecerán aquí</Text>
+            </View>
+          ) : (
+            pageItems.map((item, index) => <Item key={item.id} item={item} index={index} />)
+          )}
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
-function FiltroChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function FiltroChip({ label, icon, active, onPress }: { label: string; icon: string; active: boolean; onPress: () => void }) {
   return (
     <TouchableOpacity 
       onPress={onPress} 
       style={[styles.chip, active && styles.chipActive]}
       activeOpacity={0.7}
     >
+      <Text style={styles.chipIcon}>{icon}</Text>
       <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: "#F1F5F9" 
+    backgroundColor: "#F8FAFC",
   },
   header: {
-    backgroundColor: "#1E293B",
     paddingTop: Platform.OS === "ios" ? 60 : 24,
     paddingBottom: 24,
     paddingHorizontal: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3,
+        shadowRadius: 16,
       },
-      android: {
-        elevation: 8,
-      },
+      android: { elevation: 12 },
     }),
   },
-  headerContent: {},
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
   title: { 
-    fontSize: 32, 
+    fontSize: 34, 
     fontWeight: "900", 
     color: "#FFFFFF",
-    letterSpacing: -0.8,
+    letterSpacing: -1,
     marginBottom: 4,
   },
   subtitle: {
@@ -318,11 +417,39 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     fontWeight: "600",
   },
+  statsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#94A3B8",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
   contentWrapper: {
     paddingHorizontal: 16,
     paddingTop: 20,
   },
-  searchBox: {
+  searchContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFFFFF",
@@ -339,16 +466,14 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.08,
         shadowRadius: 8,
       },
-      android: {
-        elevation: 3,
-      },
+      android: { elevation: 3 },
     }),
   },
-  searchIconContainer: {
+  searchIcon: {
     marginRight: 12,
   },
-  searchIcon: {
-    fontSize: 20,
+  searchIconText: {
+    fontSize: 18,
   },
   searchInput: {
     flex: 1,
@@ -356,7 +481,7 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     fontWeight: "600",
   },
-  clearBtn: {
+  clearButton: {
     width: 28,
     height: 28,
     borderRadius: 14,
@@ -372,13 +497,23 @@ const styles = StyleSheet.create({
   filtersSection: {
     marginBottom: 20,
   },
+  filterHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   filterTitle: {
     fontSize: 13,
     fontWeight: "800",
     color: "#475569",
-    marginBottom: 12,
     textTransform: "uppercase",
     letterSpacing: 1,
+  },
+  clearFilters: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#3B82F6",
   },
   chipsContainer: {
     flexDirection: "row",
@@ -386,16 +521,22 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   chip: {
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
     backgroundColor: "#FFFFFF",
     borderWidth: 2,
     borderColor: "#E2E8F0",
+    gap: 6,
   },
   chipActive: {
     backgroundColor: "#3B82F6",
     borderColor: "#3B82F6",
+  },
+  chipIcon: {
+    fontSize: 16,
   },
   chipLabel: {
     fontSize: 14,
@@ -408,14 +549,14 @@ const styles = StyleSheet.create({
   dateSection: {
     marginBottom: 20,
   },
-  dateRow2: {
+  dateRow: {
     flexDirection: "row",
     gap: 12,
   },
-  dateInputWrapper: {
+  dateInputContainer: {
     flex: 1,
   },
-  dateLabel: {
+  dateInputLabel: {
     fontSize: 12,
     fontWeight: "700",
     color: "#64748B",
@@ -434,9 +575,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 15,
   },
-  listContent: {
+  listWrapper: {
     paddingHorizontal: 16,
-    paddingTop: 8,
     paddingBottom: 32,
   },
   card: {
@@ -444,6 +584,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginBottom: 16,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -451,9 +593,7 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 12,
       },
-      android: {
-        elevation: 4,
-      },
+      android: { elevation: 4 },
     }),
   },
   statusIndicator: {
@@ -461,37 +601,36 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    width: 6,
-  },
-  statusComplete: {
-    backgroundColor: "#10B981",
-  },
-  statusPending: {
-    backgroundColor: "#F59E0B",
+    width: 5,
   },
   cardContent: {
-    padding: 18,
-    marginLeft: 6,
+    padding: 20,
+    marginLeft: 5,
   },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
+    marginBottom: 16,
   },
-  orderBadge: {
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
+  orderInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
-  orderText: {
-    fontSize: 15,
+  orderLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#64748B",
+    textTransform: "uppercase",
+  },
+  orderNumber: {
+    fontSize: 18,
     fontWeight: "900",
     color: "#0F172A",
     letterSpacing: 0.5,
   },
-  statusChip: {
+  statusBadge: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
@@ -499,106 +638,110 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 6,
   },
-  statusChipComplete: {
-    backgroundColor: "#D1FAE5",
-  },
-  statusChipPending: {
-    backgroundColor: "#FEF3C7",
-  },
-  statusDot: {
+  statusPulse: {
     width: 8,
     height: 8,
     borderRadius: 4,
   },
-  dotComplete: {
-    backgroundColor: "#10B981",
-  },
-  dotPending: {
-    backgroundColor: "#F59E0B",
-  },
-  statusLabel: {
+  statusText: {
     fontSize: 12,
     fontWeight: "800",
   },
-  statusLabelComplete: {
-    color: "#059669",
+  dateTimeRow: {
+    flexDirection: "row",
+    gap: 16,
+    marginBottom: 16,
   },
-  statusLabelPending: {
-    color: "#D97706",
-  },
-  dateRow: {
+  dateContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    gap: 6,
   },
   dateIcon: {
-    fontSize: 16,
-    marginRight: 8,
+    fontSize: 14,
   },
   dateText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#475569",
-  },
-  timeSeparator: {
     fontSize: 14,
-    color: "#CBD5E1",
-    marginHorizontal: 8,
     fontWeight: "700",
+    color: "#334155",
+  },
+  timeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  timeIcon: {
+    fontSize: 14,
   },
   timeText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#94A3B8",
+    color: "#64748B",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#F1F5F9",
+    marginBottom: 16,
   },
   cardFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  methodContainer: {
+  methodBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 8,
   },
   methodIcon: {
     fontSize: 18,
-    marginRight: 8,
   },
   methodText: {
     fontSize: 14,
-    fontWeight: "700",
-    color: "#64748B",
-    textTransform: "capitalize",
+    fontWeight: "800",
   },
-  totalBox: {
+  totalContainer: {
     alignItems: "flex-end",
   },
   totalLabel: {
     fontSize: 11,
     fontWeight: "800",
-    color: "#94A3B8",
+    color: "#64748B",
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   totalAmount: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "900",
     color: "#3B82F6",
+  },
+  arrowIndicator: {
+    position: "absolute",
+    right: 16,
+    top: "50%",
+    marginTop: -12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  arrowText: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#64748B",
   },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 80,
   },
-  emptyIconCircle: {
+  emptyIconContainer: {
     width: 100,
     height: 100,
     borderRadius: 50,
@@ -606,6 +749,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 20,
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
   },
   emptyIcon: {
     fontSize: 48,
@@ -618,7 +763,7 @@ const styles = StyleSheet.create({
   },
   emptySubtitle: {
     fontSize: 15,
-    color: "#94A3B8",
+    color: "#64748B",
     fontWeight: "600",
   },
 });
