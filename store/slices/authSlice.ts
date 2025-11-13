@@ -9,6 +9,7 @@ interface User {
   tipo: number;
   userId: number;
   verified?: boolean;
+  email?: string;
 }
 
 interface AuthState {

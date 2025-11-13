@@ -13,6 +13,7 @@ export interface User {
   tipo: number;
   userId: number;
   verified?: boolean;
+  email?: string;
 }
 
 export interface LoginResponse {
@@ -80,6 +81,7 @@ const token =
             tipo: data.user.tipo,
             userId: data.user.userId,
             verified: data.user.verified,
+            email: data.user.email || data.user.correo || undefined,
           }
         : (data.tipo && data.userId
             ? {
@@ -87,6 +89,7 @@ const token =
                 tipo: data.tipo,
                 userId: data.userId,
                 verified: data.verified,
+                email: data.email || data.correo || undefined,
               }
             : null),
       message: data.message,
@@ -116,6 +119,7 @@ const token =
             tipo: data.user.tipo,
             userId: data.user.userId,
             verified: data.user.verified,
+            email: data.user.email || data.user.correo || undefined,
           }
         : (data.tipo && data.userId
             ? {
@@ -123,6 +127,7 @@ const token =
                 tipo: data.tipo,
                 userId: data.userId,
                 verified: data.verified,
+                email: data.email || data.correo || undefined,
               }
             : null),
       token,
