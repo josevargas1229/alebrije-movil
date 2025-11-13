@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Platform, Keyboard } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSelector, useDispatch } from "react-redux";
 import type { RootState } from "@/store";
@@ -22,6 +22,7 @@ type TransferenciaData = {
   referencia: string;
   titular: string;
 };
+
 export default function CheckoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const sale = useSelector((s: RootState) => (id ? s.sales.drafts[id] : null));
@@ -54,7 +55,6 @@ export default function CheckoutScreen() {
     );
   }
   
-
   const efectivoValido = metodo !== "efectivo" || recibidoNumber >= total;
   const tarjetaValida =
     metodo !== "tarjeta" ||
@@ -69,63 +69,62 @@ export default function CheckoutScreen() {
      transfer.referencia.trim().length >= 6 &&
      transfer.titular.trim().length >= 3);
   const metodoOk =
-  metodo === "efectivo" ? efectivoValido :
-  metodo === "tarjeta" ? tarjetaValida :
-  transferenciaValida;
+    metodo === "efectivo" ? efectivoValido :
+    metodo === "tarjeta" ? tarjetaValida :
+    transferenciaValida;
 
-const puedeConfirmar = sale.productos.length > 0 && total > 0 && metodoOk;
+  const puedeConfirmar = sale.productos.length > 0 && total > 0 && metodoOk;
+
   const onConfirm = async () => {
-  try {
-    if (!puedeConfirmar) {
-      Alert.alert("Datos incompletos", "Verifica el método de pago y los importes.");
-      return;
+    try {
+      if (!puedeConfirmar) {
+        Alert.alert("Datos incompletos", "Verifica el método de pago y los importes.");
+        return;
+      }
+      if (!authUserId) {
+        Alert.alert("Sesión requerida", "Inicia sesión para registrar la venta.");
+        return;
+      }
+
+      let auth = (axiosClient.defaults.headers.common.Authorization as string) || "";
+      if (!auth) {
+        const t = await AsyncStorage.getItem("auth_token");
+        if (t) { setAuthHeader(t); auth = `Bearer ${t}`; }
+      }
+
+      const payload = {
+        usuario_id: authUserId,
+        total: +total.toFixed(2),
+        productos: sale.productos.map((p: VentaProducto) => ({
+          producto_id: Number(p.producto_id),
+          talla_id: Number(p.talla_id),
+          color_id: Number(p.color_id),
+          cantidad: Number(p.cantidad),
+          precio_unitario: typeof p.precio_unitario === "number" ? p.precio_unitario : 0,
+        })),
+        recogerEnTienda: !!sale.recogerEnTienda,
+        direccion_id: sale.direccion_id != null ? Number(sale.direccion_id) : null,
+        metodo_pago: metodo,
+      };
+
+      const resp = await createVenta(payload);
+      const ventaId = resp?.venta?.id;
+      if (ventaId) {
+        await AsyncStorage.setItem(`ventaMetodo:${ventaId}`, metodo);
+      }
+
+      dispatch(setStatus({ id: sale.id, status: "finalizada" }));
+      dispatch(clearDraft(sale.id));
+
+      Alert.alert(
+        "Venta registrada",
+        `Método: ${metodo}${metodo === "efectivo" ? ` | Cambio: $${cambio.toFixed(2)}` : ""}`,
+        [{ text: "OK", onPress: () => router.replace("/(tabs)/(history)") }]
+      );
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "No se pudo registrar la venta.");
     }
-
-    if (!authUserId) {
-      Alert.alert("Sesión requerida", "Inicia sesión para registrar la venta.");
-      return;
-    }
-
-
-    let auth = (axiosClient.defaults.headers.common.Authorization as string) || "";
-    if (!auth) {
-      const t = await AsyncStorage.getItem("auth_token");
-      if (t) { setAuthHeader(t); auth = `Bearer ${t}`; }
-    }
-
-    const payload = {
-      usuario_id: authUserId, 
-      total: +total.toFixed(2),
-      productos: sale.productos.map((p: VentaProducto) => ({
-        producto_id: Number(p.producto_id),
-        talla_id: Number(p.talla_id),
-        color_id: Number(p.color_id),
-        cantidad: Number(p.cantidad),
-        precio_unitario: typeof p.precio_unitario === "number" ? p.precio_unitario : 0,
-      })),
-      recogerEnTienda: !!sale.recogerEnTienda,
-      direccion_id: sale.direccion_id != null ? Number(sale.direccion_id) : null,
-    };
-
-    await createVenta(payload);
-
-    const resp = await createVenta(payload); // asegúrate que devuelve { venta: { id } }
-const ventaId = resp?.venta?.id;
-if (ventaId) {
-  await AsyncStorage.setItem(`ventaMetodo:${ventaId}`, metodo);
-}
-
-    dispatch(setStatus({ id: sale.id, status: "finalizada" }));
-    dispatch(clearDraft(sale.id));
-    Alert.alert(
-      "Venta registrada",
-      `Método: ${metodo}${metodo === "efectivo" ? ` | Cambio: $${cambio.toFixed(2)}` : ""}`,
-      [{ text: "OK", onPress: () => router.replace("/(tabs)/(sales)") }]
-    );
-  } catch (e: any) {
-    Alert.alert("Error", e?.message || "No se pudo registrar la venta.");
-  }
-};
+  };
 
   return (
     <View style={styles.container}>
@@ -150,8 +149,10 @@ if (ventaId) {
             <TextInput
               placeholder="0.00"
               keyboardType="decimal-pad"
+              returnKeyType="done"
               value={montoRecibido}
               onChangeText={setMontoRecibido}
+              onSubmitEditing={() => Keyboard.dismiss()}
               style={[styles.input, recibidoNumber < total && styles.inputError]}
             />
             <View style={styles.inline}>
@@ -163,13 +164,16 @@ if (ventaId) {
             )}
           </View>
         )}
-         {metodo === "tarjeta" && (
+
+        {metodo === "tarjeta" && (
           <View style={{ marginTop: 16, gap: 8 }}>
             <Text style={styles.sublabel}>Nombre en la tarjeta</Text>
             <TextInput
               placeholder="Ej: Juan Pérez"
               value={tarjeta.nombre}
+              returnKeyType="next"
               onChangeText={(v) => setTarjeta(t => ({ ...t, nombre: v }))}
+              onSubmitEditing={() => Keyboard.dismiss()}
               style={[styles.input, tarjeta.nombre.trim().length < 3 && styles.inputError]}
             />
 
@@ -177,8 +181,10 @@ if (ventaId) {
             <TextInput
               placeholder="16 dígitos"
               keyboardType="number-pad"
+              returnKeyType="next"
               value={tarjeta.numero}
               onChangeText={(v) => setTarjeta(t => ({ ...t, numero: v }))}
+              onSubmitEditing={() => Keyboard.dismiss()}
               style={[
                 styles.input,
                 !/^[0-9]{13,19}$/.test(tarjeta.numero.replace(/\s+/g, "")) && styles.inputError
@@ -191,8 +197,10 @@ if (ventaId) {
                 <TextInput
                   placeholder="MM/AA"
                   keyboardType="numbers-and-punctuation"
+                  returnKeyType="next"
                   value={tarjeta.vencimiento}
                   onChangeText={(v) => setTarjeta(t => ({ ...t, vencimiento: v }))}
+                  onSubmitEditing={() => Keyboard.dismiss()}
                   style={[
                     styles.input,
                     !/^(0[1-9]|1[0-2])\/\d{2}$/.test(tarjeta.vencimiento.trim()) && styles.inputError
@@ -204,8 +212,10 @@ if (ventaId) {
                 <TextInput
                   placeholder="3 o 4 dígitos"
                   keyboardType="number-pad"
+                  returnKeyType="done"
                   value={tarjeta.cvv}
                   onChangeText={(v) => setTarjeta(t => ({ ...t, cvv: v }))}
+                  onSubmitEditing={() => Keyboard.dismiss()}
                   style={[
                     styles.input,
                     !/^[0-9]{3,4}$/.test(tarjeta.cvv.trim()) && styles.inputError
@@ -224,7 +234,9 @@ if (ventaId) {
             <TextInput
               placeholder="Ej: BBVA"
               value={transfer.banco}
+              returnKeyType="next"
               onChangeText={(v) => setTransfer(t => ({ ...t, banco: v }))}
+              onSubmitEditing={() => Keyboard.dismiss()}
               style={[styles.input, transfer.banco.trim().length < 2 && styles.inputError]}
             />
 
@@ -232,7 +244,9 @@ if (ventaId) {
             <TextInput
               placeholder="Referencia de pago"
               value={transfer.referencia}
+              returnKeyType="next"
               onChangeText={(v) => setTransfer(t => ({ ...t, referencia: v }))}
+              onSubmitEditing={() => Keyboard.dismiss()}
               style={[styles.input, transfer.referencia.trim().length < 6 && styles.inputError]}
             />
 
@@ -240,7 +254,9 @@ if (ventaId) {
             <TextInput
               placeholder="Nombre del titular"
               value={transfer.titular}
+              returnKeyType="done"
               onChangeText={(v) => setTransfer(t => ({ ...t, titular: v }))}
+              onSubmitEditing={() => Keyboard.dismiss()}
               style={[styles.input, transfer.titular.trim().length < 3 && styles.inputError]}
             />
 
