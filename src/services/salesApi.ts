@@ -81,6 +81,7 @@ export async function createVenta(payload: {
   }>;
   recogerEnTienda: boolean;
   direccion_id: number | null;
+  metodo_pago?: "efectivo" | "tarjeta" | "transferencia";
 }) {
 
   if (!axiosClient.defaults.headers.common.Authorization) {
